@@ -1,23 +1,15 @@
-import React, { useState } from 'react';
-import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  ScrollView, 
-  TextInput, 
-  TouchableOpacity, 
-  Alert,
-  Image,
-  FlatList 
-} from 'react-native';
-import { Link, useRouter } from 'expo-router';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, Text, View, ScrollView, TextInput, TouchableOpacity, Alert, Image } from 'react-native';
+import { Link, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { itemsApi, Item } from '../../../../src/services/api';
+import Card from '../../../../src/components/ui/Card';
+import ErrorMessage from '../../../../src/components/ui/ErrorMessage';
+import LoadingIndicator from '../../../../src/components/ui/LoadingIndicator';
 import * as ImagePicker from 'expo-image-picker';
-import { itemsApi, Item } from '../../src/services/api';
-import Card from '../../src/components/ui/Card';
-import ErrorMessage from '../../src/components/ui/ErrorMessage';
 
-export default function NewInventoryItem() {
+export default function EditInventoryItem() {
+  const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [formData, setFormData] = useState<Omit<Item, '_id'>>({
     name: '',
@@ -28,11 +20,41 @@ export default function NewInventoryItem() {
     description: '',
     tags: []
   });
-  
   const [imageUri, setImageUri] = useState<string | null>(null);
-  const [currentTag, setCurrentTag] = useState('');
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchItem = async () => {
+      if (!id) return;
+      
+      try {
+        const data = await itemsApi.getById(id);
+        setFormData({
+          name: data.name,
+          sku: data.sku,
+          category: data.category,
+          quantity: data.quantity,
+          price: data.price,
+          description: data.description || '',
+          tags: data.tags || []
+        });
+        
+        // Set image preview if available
+        if (data.imageUrl) {
+          setImageUri(data.imageUrl);
+        }
+      } catch (err) {
+        console.error('Failed to fetch item:', err);
+        setError('Failed to load item details. The item may have been deleted.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchItem();
+  }, [id]);
 
   const handleChange = (field: keyof typeof formData, value: string) => {
     if (field === 'quantity' || field === 'price') {
@@ -44,50 +66,8 @@ export default function NewInventoryItem() {
     }
   };
 
-  const pickImage = async () => {
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    
-    if (!permissionResult.granted) {
-      Alert.alert('Permission Required', 'You need to grant permission to access your photo library');
-      return;
-    }
-    
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    });
-    
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      setImageUri(result.assets[0].uri);
-    }
-  };
-
-  const handleAddTag = () => {
-    if (!currentTag.trim()) return;
-    
-    // Make sure there are no duplicates
-    if (formData.tags && formData.tags.includes(currentTag.trim())) {
-      setCurrentTag('');
-      return;
-    }
-    
-    const updatedTags = [...(formData.tags || []), currentTag.trim()];
-    setFormData(prev => ({ ...prev, tags: updatedTags }));
-    setCurrentTag('');
-  };
-  
-  const handleRemoveTag = (tagToRemove: string) => {
-    if (!formData.tags) return;
-    
-    const updatedTags = formData.tags.filter(tag => tag !== tagToRemove);
-    setFormData(prev => ({ ...prev, tags: updatedTags }));
-  };
-
   const validateForm = (): string | null => {
     if (!formData.name.trim()) return 'Name is required';
-    if (!formData.sku.trim()) return 'SKU is required';
     if (!formData.category.trim()) return 'Category is required';
     if (formData.quantity < 0) return 'Quantity cannot be negative';
     if (formData.price < 0) return 'Price cannot be negative';
@@ -95,6 +75,8 @@ export default function NewInventoryItem() {
   };
 
   const handleSubmit = async () => {
+    if (!id) return;
+    
     const validationError = validateForm();
     if (validationError) {
       setError(validationError);
@@ -105,8 +87,7 @@ export default function NewInventoryItem() {
     setError(null);
     
     try {
-      // If we have an image, use FormData
-      if (imageUri) {
+      if (imageUri && !imageUri.startsWith('http')) {  // Check if it's a newly selected image
         const formDataToSend = new FormData();
         
         // Add text fields
@@ -131,30 +112,54 @@ export default function NewInventoryItem() {
           type: `image/${fileType}`
         } as any);
         
-        await itemsApi.create(formDataToSend);
+        await itemsApi.update(id, formDataToSend);
       } else {
-        // No image, just send JSON
-        await itemsApi.create(formData);
+        // No new image, just send JSON
+        await itemsApi.update(id, formData);
       }
       
-      Alert.alert('Success', 'Item was created successfully');
-      router.replace('/inventory');
+      Alert.alert('Success', 'Item was updated successfully');
+      router.replace(`/inventory/${id}`);
     } catch (err) {
-      console.error('Failed to save item:', err);
-      setError('Failed to save item. Please try again.');
+      console.error('Failed to update item:', err);
+      setError('Failed to update item. Please try again.');
     } finally {
       setSaving(false);
     }
   };
 
+  const pickImage = async () => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    
+    if (!permissionResult.granted) {
+      Alert.alert('Permission Required', 'You need to grant permission to access your photo library');
+      return;
+    }
+    
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.8,
+    });
+    
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      setImageUri(result.assets[0].uri);
+    }
+  };
+
+  if (loading) {
+    return <LoadingIndicator />;
+  }
+
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Add New Item</Text>
-        <Link href="/inventory" asChild>
+        <Text style={styles.title}>Edit Item</Text>
+        <Link href={`/inventory/${id}`} asChild>
           <TouchableOpacity style={styles.backButton}>
             <Ionicons name="arrow-back" size={18} color="#0a7ea4" />
-            <Text style={styles.backButtonText}>Back to List</Text>
+            <Text style={styles.backButtonText}>Back to Details</Text>
           </TouchableOpacity>
         </Link>
       </View>
@@ -162,7 +167,6 @@ export default function NewInventoryItem() {
       {error && <ErrorMessage message={error} />}
 
       <Card>
-        {/* Image Picker */}
         <View style={styles.formGroup}>
           <Text style={styles.label}>Item Image</Text>
           <View style={styles.imageContainer}>
@@ -185,7 +189,6 @@ export default function NewInventoryItem() {
           </View>
         </View>
 
-        {/* Basic Info Fields */}
         <View style={styles.formGroup}>
           <Text style={styles.label}>Name *</Text>
           <TextInput
@@ -198,14 +201,13 @@ export default function NewInventoryItem() {
         </View>
 
         <View style={styles.formGroup}>
-          <Text style={styles.label}>SKU *</Text>
+          <Text style={styles.label}>SKU</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, styles.disabledInput]}
             value={formData.sku}
-            onChangeText={(value) => handleChange('sku', value)}
-            placeholder="Stock keeping unit"
-            editable={!saving}
+            editable={false}
           />
+          <Text style={styles.helperText}>SKU cannot be changed after creation</Text>
         </View>
 
         <View style={styles.formGroup}>
@@ -219,42 +221,6 @@ export default function NewInventoryItem() {
           />
         </View>
 
-        {/* Tags Input */}
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>Tags</Text>
-          <View style={styles.tagInputContainer}>
-            <TextInput
-              style={styles.tagInput}
-              value={currentTag}
-              onChangeText={setCurrentTag}
-              placeholder="Add tags..."
-              editable={!saving}
-            />
-            <TouchableOpacity 
-              style={[styles.addTagButton, !currentTag.trim() && styles.disabledButton]} 
-              onPress={handleAddTag}
-              disabled={!currentTag.trim() || saving}
-            >
-              <Ionicons name="add" size={24} color="white" />
-            </TouchableOpacity>
-          </View>
-          
-          {formData.tags && formData.tags.length > 0 ? (
-            <View style={styles.tagsContainer}>
-              {formData.tags.map(tag => (
-                <View key={tag} style={styles.tagBadge}>
-                  <Text style={styles.tagText}>{tag}</Text>
-                  <TouchableOpacity onPress={() => handleRemoveTag(tag)}>
-                    <Ionicons name="close" size={16} color="#333" />
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </View>
-          ) : (
-            <Text style={styles.helperText}>Add tags to help organize your inventory</Text>
-          )}
-        </View>
-
         <View style={styles.row}>
           <View style={[styles.formGroup, styles.halfWidth]}>
             <Text style={styles.label}>Quantity *</Text>
@@ -262,21 +228,25 @@ export default function NewInventoryItem() {
               style={styles.input}
               value={formData.quantity.toString()}
               onChangeText={(value) => handleChange('quantity', value)}
-              keyboardType="numeric"
+              keyboardType="number-pad"
+              placeholder="0"
               editable={!saving}
             />
           </View>
 
           <View style={[styles.formGroup, styles.halfWidth]}>
             <Text style={styles.label}>Price *</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.price.toString()}
-              onChangeText={(value) => handleChange('price', value)}
-              keyboardType="decimal-pad"
-              placeholder="0.00"
-              editable={!saving}
-            />
+            <View style={styles.priceContainer}>
+              <Text style={styles.priceCurrency}>$</Text>
+              <TextInput
+                style={styles.priceInput}
+                value={formData.price.toString()}
+                onChangeText={(value) => handleChange('price', value)}
+                keyboardType="decimal-pad"
+                placeholder="0.00"
+                editable={!saving}
+              />
+            </View>
           </View>
         </View>
 
@@ -300,7 +270,7 @@ export default function NewInventoryItem() {
         >
           <Ionicons name="save" size={18} color="white" />
           <Text style={styles.saveButtonText}>
-            {saving ? 'Saving...' : 'Save Item'}
+            {saving ? 'Saving...' : 'Update Item'}
           </Text>
         </TouchableOpacity>
       </Card>
@@ -354,6 +324,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: 'white',
   },
+  disabledInput: {
+    backgroundColor: '#f5f5f5',
+    color: '#777',
+  },
+  helperText: {
+    fontSize: 12,
+    color: '#777',
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
   textarea: {
     height: 100,
     textAlignVertical: 'top',
@@ -403,7 +383,30 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   imageContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 4,
+    padding: 16,
+    backgroundColor: 'white',
     marginBottom: 16,
+  },
+  imagePlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 150,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    backgroundColor: '#f9f9f9',
+  },
+  imagePlaceholderText: {
+    marginTop: 8,
+    color: '#757575',
+    fontSize: 14,
   },
   selectedImageContainer: {
     position: 'relative',
@@ -422,69 +425,5 @@ const styles = StyleSheet.create({
     right: 8,
     backgroundColor: 'rgba(255, 255, 255, 0.8)',
     borderRadius: 15,
-  },
-  imagePlaceholder: {
-    width: '100%',
-    height: 150,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderStyle: 'dashed',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f9f9f9',
-  },
-  imagePlaceholderText: {
-    marginTop: 8,
-    color: '#757575',
-  },
-  tagInputContainer: {
-    flexDirection: 'row',
-    marginBottom: 8,
-  },
-  tagInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 4,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: 'white',
-    marginRight: 8,
-  },
-  addTagButton: {
-    backgroundColor: '#0a7ea4',
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 48,
-    borderRadius: 4,
-  },
-  disabledButton: {
-    backgroundColor: '#cccccc',
-  },
-  tagsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 8,
-    gap: 8,
-  },
-  tagBadge: {
-    backgroundColor: '#e0e0e0',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  tagText: {
-    fontSize: 14,
-    color: '#333',
-  },
-  helperText: {
-    fontSize: 14,
-    color: '#757575',
-    fontStyle: 'italic',
-    marginTop: 8,
   },
 });

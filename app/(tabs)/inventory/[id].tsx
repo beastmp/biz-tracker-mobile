@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert, Image } from 'react-native';
 import { useLocalSearchParams, useRouter, Link } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { itemsApi, Item } from '../../src/services/api';
-import LoadingIndicator from '../../src/components/ui/LoadingIndicator';
-import Card from '../../src/components/ui/Card';
-import ErrorMessage from '../../src/components/ui/ErrorMessage';
+import { itemsApi, Item } from '../../../src/services/api';
+import LoadingIndicator from '../../../src/components/ui/LoadingIndicator';
+import Card from '../../../src/components/ui/Card';
+import ErrorMessage from '../../../src/components/ui/ErrorMessage';
 
 export default function InventoryDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();

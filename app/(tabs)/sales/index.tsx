@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, FlatList, TouchableOpacity, TextInput, Alert } from 'react-native';
 import { Link } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { salesApi, Sale } from '../../src/services/api';
-import LoadingIndicator from '../../src/components/ui/LoadingIndicator';
-import Card from '../../src/components/ui/Card';
-import ErrorMessage from '../../src/components/ui/ErrorMessage';
+import { salesApi, Sale } from '../../../src/services/api';
+import LoadingIndicator from '../../../src/components/ui/LoadingIndicator';
+import Card from '../../../src/components/ui/Card';
+import ErrorMessage from '../../../src/components/ui/ErrorMessage';
 
 export default function SalesList() {
   const [sales, setSales] = useState<Sale[]>([]);

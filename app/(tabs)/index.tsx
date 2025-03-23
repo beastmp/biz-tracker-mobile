@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity } from 'react-native';
 import { Link } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { itemsApi, Item, salesApi, Sale } from '../src/services/api';
-import Card from '../src/components/ui/Card';
-import LoadingIndicator from '../src/components/ui/LoadingIndicator';
+import { itemsApi, Item, salesApi, Sale, purchasesApi, Purchase } from '../../src/services/api';
+import Card from '../../src/components/ui/Card';
+import LoadingIndicator from '../../src/components/ui/LoadingIndicator';
 
 export default function Dashboard() {
   const [inventoryStats, setInventoryStats] = useState({
@@ -17,6 +17,12 @@ export default function Dashboard() {
     totalSales: 0,
     totalRevenue: 0,
     recentSales: [] as Sale[],
+  });
+
+  const [purchasesStats, setPurchasesStats] = useState({
+    totalPurchases: 0,
+    totalCost: 0,
+    recentPurchases: [] as Purchase[],
   });
   
   const [loading, setLoading] = useState(true);
@@ -37,7 +43,7 @@ export default function Dashboard() {
           lowStockItems,
         });
 
-        // Fetch sales data - last 30 days
+        // Date range for 30 day reports
         const today = new Date();
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(today.getDate() - 30);
@@ -45,11 +51,20 @@ export default function Dashboard() {
         const startDate = thirtyDaysAgo.toISOString().split('T')[0];
         const endDate = today.toISOString().split('T')[0];
         
+        // Fetch sales data - last 30 days
         const salesReport = await salesApi.getReport(startDate, endDate);
         setSalesStats({
           totalSales: salesReport.totalSales,
           totalRevenue: salesReport.totalRevenue,
           recentSales: salesReport.sales.slice(0, 5),
+        });
+
+        // Fetch purchases data - last 30 days
+        const purchasesReport = await purchasesApi.getReport(startDate, endDate);
+        setPurchasesStats({
+          totalPurchases: purchasesReport.totalPurchases,
+          totalCost: purchasesReport.totalCost,
+          recentPurchases: purchasesReport.purchases.slice(0, 5),
         });
       } catch (error) {
         console.error('Failed to fetch dashboard data:', error);
@@ -76,6 +91,16 @@ export default function Dashboard() {
     });
   };
 
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'received': return '#4caf50'; // green
+      case 'pending': return '#ff9800'; // orange
+      case 'partially_received': return '#2196f3'; // blue
+      case 'cancelled': return '#f44336'; // red
+      default: return '#9e9e9e'; // grey
+    }
+  };
+
   if (loading) {
     return <LoadingIndicator />;
   }
@@ -91,7 +116,7 @@ export default function Dashboard() {
             <Ionicons name="cube" size={24} color="#0a7ea4" />
           </View>
           <Text style={styles.cardValue}>{inventoryStats.totalItems}</Text>
-          <Link href="/inventory" asChild>
+          <Link href="/(tabs)/inventory" asChild>
             <TouchableOpacity>
               <Text style={styles.linkText}>View inventory</Text>
             </TouchableOpacity>
@@ -112,7 +137,7 @@ export default function Dashboard() {
             <Ionicons name="cart" size={24} color="#2196f3" />
           </View>
           <Text style={styles.cardValue}>{salesStats.totalSales}</Text>
-          <Link href="/sales" asChild>
+          <Link href="/(tabs)/sales" asChild>
             <TouchableOpacity>
               <Text style={styles.linkText}>View sales</Text>
             </TouchableOpacity>
@@ -122,10 +147,36 @@ export default function Dashboard() {
         <Card style={styles.statsCard}>
           <View style={styles.cardHeader}>
             <Text style={styles.cardText}>Revenue (30 days)</Text>
-            <Ionicons name="trending-up" size={24} color="#9c27b0" />
+            <Ionicons name="cash" size={24} color="#9c27b0" />
           </View>
           <Text style={styles.cardValue}>{formatCurrency(salesStats.totalRevenue)}</Text>
-          <Link href="/sales/reports" asChild>
+          <Link href="/(tabs)/sales/reports" asChild>
+            <TouchableOpacity>
+              <Text style={styles.linkText}>View reports</Text>
+            </TouchableOpacity>
+          </Link>
+        </Card>
+        
+        <Card style={styles.statsCard}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardText}>Purchases (30 days)</Text>
+            <Ionicons name="bag" size={24} color="#ff9800" />
+          </View>
+          <Text style={styles.cardValue}>{purchasesStats.totalPurchases}</Text>
+          <Link href="/(tabs)/purchases" asChild>
+            <TouchableOpacity>
+              <Text style={styles.linkText}>View purchases</Text>
+            </TouchableOpacity>
+          </Link>
+        </Card>
+
+        <Card style={styles.statsCard}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardText}>Purchase Cost (30 days)</Text>
+            <Ionicons name="trending-down" size={24} color="#f44336" />
+          </View>
+          <Text style={styles.cardValue}>{formatCurrency(purchasesStats.totalCost)}</Text>
+          <Link href="/(tabs)/purchases/reports" asChild>
             <TouchableOpacity>
               <Text style={styles.linkText}>View reports</Text>
             </TouchableOpacity>
@@ -141,7 +192,7 @@ export default function Dashboard() {
           <Text style={styles.emptyText}>No items are low in stock.</Text>
         ) : (
           inventoryStats.lowStockItems.slice(0, 5).map((item) => (
-            <Link key={item._id} href={`/inventory/${item._id}`} asChild>
+            <Link key={item._id} href={`/(tabs)/inventory/${item._id}`} asChild>
               <TouchableOpacity style={styles.listItem}>
                 <View>
                   <Text style={item.quantity === 0 ? styles.outOfStockText : styles.itemText}>
@@ -160,7 +211,7 @@ export default function Dashboard() {
       <Card>
         <View style={styles.cardHeaderWithButton}>
           <Text style={styles.sectionTitle}>Recent Sales</Text>
-          <Link href="/sales/new" asChild>
+          <Link href="/(tabs)/sales/new" asChild>
             <TouchableOpacity style={styles.button}>
               <Ionicons name="add" size={16} color="white" />
               <Text style={styles.buttonText}>New Sale</Text>
@@ -175,7 +226,7 @@ export default function Dashboard() {
           </Text>
         ) : (
           salesStats.recentSales.map((sale) => (
-            <Link key={sale._id} href={`/sales/${sale._id}`} asChild>
+            <Link key={sale._id} href={`/(tabs)/sales/${sale._id}`} asChild>
               <TouchableOpacity style={styles.listItem}>
                 <View style={styles.salesListItem}>
                   <View>
@@ -188,6 +239,57 @@ export default function Dashboard() {
                   </View>
                   <Text style={styles.saleAmount}>
                     {formatCurrency(sale.total)}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            </Link>
+          ))
+        )}
+      </Card>
+      
+      <Card style={styles.lastCard}>
+        <View style={styles.cardHeaderWithButton}>
+          <Text style={styles.sectionTitle}>Recent Purchases</Text>
+          <Link href="/(tabs)/purchases/new" asChild>
+            <TouchableOpacity style={styles.button}>
+              <Ionicons name="add" size={16} color="white" />
+              <Text style={styles.buttonText}>New Purchase</Text>
+            </TouchableOpacity>
+          </Link>
+        </View>
+        <View style={styles.divider} />
+        
+        {purchasesStats.recentPurchases.length === 0 ? (
+          <Text style={styles.emptyText}>
+            No recent purchases found. Create your first purchase to start tracking.
+          </Text>
+        ) : (
+          purchasesStats.recentPurchases.map((purchase) => (
+            <Link key={purchase._id} href={`/(tabs)/purchases/${purchase._id}`} asChild>
+              <TouchableOpacity style={styles.listItem}>
+                <View style={styles.salesListItem}>
+                  <View>
+                    <Text style={styles.itemText}>
+                      {purchase.supplier?.name || 'Unknown Supplier'}
+                    </Text>
+                    <View style={styles.purchaseDetails}>
+                      <Text style={styles.itemSubtext}>
+                        {purchase.purchaseDate && formatDate(purchase.purchaseDate)}
+                      </Text>
+                      <View 
+                        style={[
+                          styles.statusBadge, 
+                          { backgroundColor: getStatusColor(purchase.status) }
+                        ]}
+                      >
+                        <Text style={styles.statusText}>
+                          {purchase.status.replace('_', ' ')}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                  <Text style={styles.saleAmount}>
+                    {formatCurrency(purchase.total)}
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -297,5 +399,23 @@ const styles = StyleSheet.create({
     color: 'white',
     marginLeft: 4,
     fontSize: 14,
+  },
+  lastCard: {
+    marginBottom: 24, // Extra margin at the bottom for scrolling comfort
+  },
+  purchaseDetails: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  statusBadge: {
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 10,
+  },
+  statusText: {
+    color: 'white',
+    fontSize: 10,
+    textTransform: 'capitalize',
   },
 });

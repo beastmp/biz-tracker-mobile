@@ -45,6 +45,40 @@ export interface Sale {
   updatedAt?: Date;
 }
 
+// Define purchase item interface
+export interface PurchaseItem {
+  item: string | Item;
+  quantity?: number;
+  weight?: number;
+  weightUnit?: 'oz' | 'lb' | 'g' | 'kg';
+  costPerUnit: number;
+  totalCost: number;
+}
+
+// Define purchase interface
+export interface Purchase {
+  _id?: string;
+  supplier: {
+    name?: string;
+    contactName?: string;
+    email?: string;
+    phone?: string;
+  };
+  items: PurchaseItem[];
+  invoiceNumber?: string;
+  purchaseDate?: Date;
+  subtotal: number;
+  taxRate?: number;
+  taxAmount?: number;
+  shippingCost?: number;
+  total: number;
+  notes?: string;
+  paymentMethod: 'cash' | 'credit' | 'debit' | 'check' | 'bank_transfer' | 'other';
+  status: 'pending' | 'received' | 'partially_received' | 'cancelled';
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
 // Create API instance
 const api = axios.create({
   baseURL: config.API_URL,
@@ -143,5 +177,71 @@ export const salesApi = {
     
     const response = await api.get(`/api/sales/reports/by-date?${params.toString()}`);
     return response.data;
+  }
+};
+
+// Purchases API methods
+export const purchasesApi = {
+  getAll: async (): Promise<Purchase[]> => {
+    try {
+      const response = await api.get('/api/purchases');
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch purchases:', error);
+      throw error;
+    }
+  },
+  
+  getById: async (id: string): Promise<Purchase> => {
+    try {
+      const response = await api.get(`/api/purchases/${id}`);
+      return response.data;
+    } catch (error) {
+      console.error(`Failed to fetch purchase with id ${id}:`, error);
+      throw error;
+    }
+  },
+  
+  create: async (purchase: Purchase): Promise<Purchase> => {
+    try {
+      const response = await api.post('/api/purchases', purchase);
+      return response.data;
+    } catch (error) {
+      console.error('Failed to create purchase:', error);
+      throw error;
+    }
+  },
+  
+  update: async (id: string, purchase: Partial<Purchase>): Promise<Purchase> => {
+    try {
+      const response = await api.patch(`/api/purchases/${id}`, purchase);
+      return response.data;
+    } catch (error) {
+      console.error(`Failed to update purchase with id ${id}:`, error);
+      throw error;
+    }
+  },
+  
+  delete: async (id: string): Promise<void> => {
+    try {
+      await api.delete(`/api/purchases/${id}`);
+    } catch (error) {
+      console.error(`Failed to delete purchase with id ${id}:`, error);
+      throw error;
+    }
+  },
+  
+  getReport: async (startDate?: string, endDate?: string): Promise<any> => {
+    try {
+      const params = new URLSearchParams();
+      if (startDate) params.append('startDate', startDate);
+      if (endDate) params.append('endDate', endDate);
+      
+      const response = await api.get(`/api/purchases/reports/by-date?${params.toString()}`);
+      return response.data;
+    } catch (error) {
+      console.error('Failed to get purchase report:', error);
+      throw error;
+    }
   }
 };

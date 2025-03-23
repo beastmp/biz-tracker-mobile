@@ -11,7 +11,7 @@ import {
   FlatList,
   Image
 } from 'react-native';
-import { Link, useLocalSearchParams, useRouter } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import { itemsApi, salesApi, Item, Sale, SaleItem } from '../../../src/services/api';
@@ -19,16 +19,15 @@ import Card from '../../../src/components/ui/Card';
 import ErrorMessage from '../../../src/components/ui/ErrorMessage';
 import LoadingIndicator from '../../../src/components/ui/LoadingIndicator';
 
-export default function EditSale() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+export default function NewSale() {
   const router = useRouter();
-  const [formData, setFormData] = useState<Sale>({
+  const [formData, setFormData] = useState<Partial<Sale>>({
     customerName: '',
     customerEmail: '',
     customerPhone: '',
     items: [],
     subtotal: 0,
-    taxRate: 0,
+    taxRate: 7.5, // Default tax rate
     taxAmount: 0,
     discountAmount: 0,
     total: 0,
@@ -45,29 +44,22 @@ export default function EditSale() {
   const [error, setError] = useState<string | null>(null);
   const [itemSelectVisible, setItemSelectVisible] = useState(false);
 
-  // Fetch available items and sale details
+  // Fetch available items
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchItems = async () => {
       try {
-        // Fetch items first
         const items = await itemsApi.getAll();
-        setAvailableItems(items);
-        
-        // Then fetch sale data if we have an ID
-        if (id) {
-          const saleData = await salesApi.getById(id);
-          setFormData(saleData);
-        }
+        setAvailableItems(items.filter(item => item.quantity > 0));
       } catch (err) {
-        console.error('Failed to fetch data:', err);
-        setError('Failed to load required data. Please check your connection.');
+        console.error('Failed to fetch items:', err);
+        setError('Failed to load inventory items. Please check your connection.');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchData();
-  }, [id]);
+    fetchItems();
+  }, []);
 
   // Recalculate totals when items, tax rate, or discount change
   useEffect(() => {
@@ -150,7 +142,7 @@ export default function EditSale() {
   const handleRemoveItem = (index: number) => {
     setFormData(prev => ({
       ...prev,
-      items: prev.items.filter((_, i) => i !== index)
+      items: prev.items?.filter((_, i) => i !== index)
     }));
   };
 
@@ -167,8 +159,6 @@ export default function EditSale() {
   };
 
   const handleSubmit = async () => {
-    if (!id) return;
-    
     const validationError = validateForm();
     if (validationError) {
       setError(validationError);
@@ -179,12 +169,12 @@ export default function EditSale() {
     setError(null);
     
     try {
-      await salesApi.update(id, formData);
-      Alert.alert('Success', 'Sale was updated successfully');
-      router.replace(`/sales/${id}`);
+      await salesApi.create(formData as Sale);
+      Alert.alert('Success', 'Sale was created successfully');
+      router.replace('/sales');
     } catch (err) {
-      console.error('Failed to update sale:', err);
-      setError('Failed to update sale. Please try again.');
+      console.error('Failed to create sale:', err);
+      setError('Failed to create sale. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -208,11 +198,11 @@ export default function EditSale() {
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Edit Sale</Text>
-        <Link href={`/sales/${id}`} asChild>
+        <Text style={styles.title}>New Sale</Text>
+        <Link href="/sales" asChild>
           <TouchableOpacity style={styles.backButton}>
             <Ionicons name="arrow-back" size={18} color="#0a7ea4" />
-            <Text style={styles.backButtonText}>Back to Details</Text>
+            <Text style={styles.backButtonText}>Back to List</Text>
           </TouchableOpacity>
         </Link>
       </View>
@@ -272,7 +262,7 @@ export default function EditSale() {
         >
           <Ionicons name="add-circle" size={20} color="white" />
           <Text style={styles.selectItemButtonText}>
-            Add Another Item
+            {selectedItem ? 'Change Item' : 'Select Item'}
           </Text>
         </TouchableOpacity>
 
@@ -317,11 +307,11 @@ export default function EditSale() {
             {formData.items.map((saleItem, index) => {
               const itemDetails = typeof saleItem.item === 'object' 
                 ? saleItem.item
-                : getItemById(saleItem.item as string);
+                : getItemById(saleItem.item);
                 
               return (
                 <View key={index} style={styles.saleItemContainer}>
-                  {/* Add item image */}
+                  {/* Item Image */}
                   {itemDetails?.imageUrl ? (
                     <Image source={{ uri: itemDetails.imageUrl }} style={styles.saleItemImage} />
                   ) : (
@@ -384,7 +374,7 @@ export default function EditSale() {
           <View style={styles.pickerContainer}>
             <Picker
               selectedValue={formData.paymentMethod}
-              onValueChange={(value) => setFormData(prev => ({ ...prev, paymentMethod: value as any }))}
+              onValueChange={(value) => setFormData(prev => ({ ...prev, paymentMethod: value }))}
               enabled={!saving}
               style={styles.picker}
             >
@@ -393,22 +383,6 @@ export default function EditSale() {
               <Picker.Item label="Debit Card" value="debit" />
               <Picker.Item label="Check" value="check" />
               <Picker.Item label="Other" value="other" />
-            </Picker>
-          </View>
-        </View>
-
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>Status</Text>
-          <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={formData.status}
-              onValueChange={(value) => setFormData(prev => ({ ...prev, status: value as any }))}
-              enabled={!saving}
-              style={styles.picker}
-            >
-              <Picker.Item label="Completed" value="completed" />
-              <Picker.Item label="Refunded" value="refunded" />
-              <Picker.Item label="Partially Refunded" value="partially_refunded" />
             </Picker>
           </View>
         </View>
@@ -443,7 +417,7 @@ export default function EditSale() {
             <Text style={styles.summaryLabel}>Tax Rate (%)</Text>
             <TextInput
               style={styles.taxRateInput}
-              value={formData.taxRate.toString()}
+              value={formData.taxRate?.toString()}
               onChangeText={(value) => handleTextChange('taxRate', value)}
               keyboardType="decimal-pad"
               editable={!saving}
@@ -461,7 +435,7 @@ export default function EditSale() {
               <Text style={styles.currencySymbol}>$</Text>
               <TextInput
                 style={styles.discountInput}
-                value={formData.discountAmount.toString()}
+                value={formData.discountAmount?.toString()}
                 onChangeText={(value) => handleTextChange('discountAmount', value)}
                 keyboardType="decimal-pad"
                 editable={!saving}
@@ -488,9 +462,9 @@ export default function EditSale() {
         onPress={handleSubmit}
         disabled={saving}
       >
-        <Ionicons name="save" size={20} color="white" />
+        <Ionicons name="checkmark-circle" size={20} color="white" />
         <Text style={styles.submitButtonText}>
-          {saving ? 'Saving...' : 'Update Sale'}
+          {saving ? 'Processing...' : 'Complete Sale'}
         </Text>
       </TouchableOpacity>
 
@@ -521,7 +495,7 @@ export default function EditSale() {
                     style={styles.itemOption}
                     onPress={() => handleSelectItem(item)}
                   >
-                    {/* Add item image */}
+                    {/* Item Image */}
                     {item.imageUrl ? (
                       <Image source={{ uri: item.imageUrl }} style={styles.itemOptionImage} />
                     ) : (
@@ -823,13 +797,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#0a7ea4',
+    backgroundColor: '#4caf50',
     padding: 16,
     borderRadius: 4,
     marginVertical: 16,
   },
   submitButtonDisabled: {
-    backgroundColor: '#76b8c8',
+    backgroundColor: '#a5d6a7',
   },
   submitButtonText: {
     color: 'white',
@@ -870,6 +844,19 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
+  itemOptionName: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  itemOptionDetails: {
+    fontSize: 14,
+    color: '#757575',
+  },
+  itemOptionPrice: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#0a7ea4',
+  },
   itemOptionImage: {
     width: 40,
     height: 40,
@@ -887,38 +874,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#eeeeee',
   },
-  itemOptionInfo: {
-    flex: 1,
-    marginLeft: 10,
-  },
-  itemOptionName: {
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  itemOptionDetails: {
-    fontSize: 14,
-    color: '#757575',
-  },
-  itemOptionPrice: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#0a7ea4',
-  },
-  tagsRow: {
-    flexDirection: 'row',
-    marginTop: 2,
-    gap: 4,
-  },
-  tagBadge: {
-    backgroundColor: '#e0e0e0',
-    paddingVertical: 2,
-    paddingHorizontal: 6,
-    borderRadius: 12,
-  },
-  tagText: {
-    fontSize: 10,
-    color: '#333',
-  },
   saleItemImage: {
     width: 40,
     height: 40,
@@ -935,5 +890,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#eeeeee',
+  },
+  tagsRow: {
+    flexDirection: 'row',
+    marginTop: 2,
+    gap: 4,
+  },
+  tagBadge: {
+    backgroundColor: '#e0e0e0',
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+  },
+  tagText: {
+    fontSize: 10,
+    color: '#333',
   },
 });

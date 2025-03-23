@@ -11,57 +11,75 @@ import {
   FlatList,
   Image
 } from 'react-native';
-import { Link, useRouter } from 'expo-router';
+import { Link, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
-import { itemsApi, salesApi, Item, Sale, SaleItem } from '../../src/services/api';
-import Card from '../../src/components/ui/Card';
-import ErrorMessage from '../../src/components/ui/ErrorMessage';
-import LoadingIndicator from '../../src/components/ui/LoadingIndicator';
+import { itemsApi, purchasesApi, Item, Purchase, PurchaseItem } from '../../../../src/services/api';
+import Card from '../../../../src/components/ui/Card';
+import ErrorMessage from '../../../../src/components/ui/ErrorMessage';
+import LoadingIndicator from '../../../../src/components/ui/LoadingIndicator';
 
-export default function NewSale() {
+export default function EditPurchase() {
+  const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const [formData, setFormData] = useState<Partial<Sale>>({
-    customerName: '',
-    customerEmail: '',
-    customerPhone: '',
+  const [formData, setFormData] = useState<Partial<Purchase>>({
+    supplier: {
+      name: '',
+      contactName: '',
+      email: '',
+      phone: ''
+    },
     items: [],
     subtotal: 0,
-    taxRate: 7.5, // Default tax rate
+    taxRate: 0,
     taxAmount: 0,
-    discountAmount: 0,
+    shippingCost: 0,
     total: 0,
     paymentMethod: 'cash',
-    notes: '',
-    status: 'completed'
+    status: 'received'
   });
   
   const [availableItems, setAvailableItems] = useState<Item[]>([]);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
-  const [selectedQuantity, setSelectedQuantity] = useState<string>('1');
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [quantity, setQuantity] = useState<string>('1');
+  const [weight, setWeight] = useState<string>('0');
+  const [weightUnit, setWeightUnit] = useState<'oz' | 'lb' | 'g' | 'kg'>('lb');
+  const [costPerUnit, setCostPerUnit] = useState<string>('0');
+  const [totalCost, setTotalCost] = useState<string>('0');
+  
+  const [loading, setLoading] = useState<boolean>(true);
+  const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [itemSelectVisible, setItemSelectVisible] = useState(false);
+  const [itemSelectVisible, setItemSelectVisible] = useState<boolean>(false);
 
-  // Fetch available items
+  // Fetch purchase and available items
   useEffect(() => {
-    const fetchItems = async () => {
+    const fetchData = async () => {
       try {
-        const items = await itemsApi.getAll();
-        setAvailableItems(items.filter(item => item.quantity > 0));
+        const [itemsData, purchaseData] = await Promise.all([
+          itemsApi.getAll(),
+          purchasesApi.getById(id as string)
+        ]);
+        
+        setAvailableItems(itemsData);
+        setFormData(purchaseData);
       } catch (err) {
-        console.error('Failed to fetch items:', err);
-        setError('Failed to load inventory items. Please check your connection.');
+        console.error('Failed to fetch data:', err);
+        setError('Failed to load purchase data. Please check your connection.');
       } finally {
         setLoading(false);
       }
     };
+    
+    if (id) {
+      fetchData();
+    } else {
+      setLoading(false);
+      setError('Purchase ID is missing');
+    }
+  }, [id]);
 
-    fetchItems();
-  }, []);
-
-  // Recalculate totals when items, tax rate, or discount change
+  // Recalculate totals when items, tax rate, or shipping change
   useEffect(() => {
     if (!formData.items || formData.items.length === 0) {
       setFormData(prev => ({
@@ -74,69 +92,89 @@ export default function NewSale() {
     }
     
     const subtotal = formData.items.reduce(
-      (sum, item) => sum + (item.quantity * item.priceAtSale), 
+      (sum, item) => sum + item.totalCost, 
       0
     );
     
     const taxAmount = subtotal * ((formData.taxRate || 0) / 100);
-    const total = subtotal + taxAmount - (formData.discountAmount || 0);
+    const shippingCost = formData.shippingCost || 0;
+    const total = subtotal + taxAmount + shippingCost;
     
     setFormData(prev => ({
       ...prev,
       subtotal,
       taxAmount,
-      total: total < 0 ? 0 : total
+      total
     }));
-  }, [formData.items, formData.taxRate, formData.discountAmount]);
+  }, [formData.items, formData.taxRate, formData.shippingCost]);
 
-  const handleTextChange = (field: keyof typeof formData, value: string) => {
-    if (field === 'taxRate' || field === 'discountAmount') {
-      // Convert to number
-      const numValue = parseFloat(value) || 0;
-      setFormData(prev => ({ ...prev, [field]: numValue }));
+  // Update total cost when quantity or costPerUnit changes
+  useEffect(() => {
+    if (selectedItem) {
+      if (selectedItem.trackingType === 'weight') {
+        setTotalCost((parseFloat(weight) * parseFloat(costPerUnit || '0')).toString());
+      } else {
+        setTotalCost((parseInt(quantity) * parseFloat(costPerUnit || '0')).toString());
+      }
+    }
+  }, [quantity, costPerUnit, weight, weightUnit, selectedItem]);
+
+  const handleTextChange = (field: string, value: string) => {
+    if (field.startsWith('supplier.')) {
+      const supplierField = field.split('.')[1];
+      setFormData(prev => ({
+        ...prev,
+        supplier: {
+          ...prev.supplier,
+          [supplierField]: value
+        }
+      }));
+    } else if (field === 'taxRate' || field === 'shippingCost') {
+      setFormData(prev => ({
+        ...prev,
+        [field]: parseFloat(value) || 0
+      }));
     } else {
-      setFormData(prev => ({ ...prev, [field]: value }));
+      setFormData(prev => ({
+        ...prev,
+        [field]: value
+      }));
     }
   };
 
   const handleSelectItem = (item: Item) => {
     setSelectedItem(item);
-    setSelectedQuantity('1');
+    setCostPerUnit(item.cost?.toString() || item.price.toString());
     setItemSelectVisible(false);
   };
 
   const handleAddItem = () => {
-    if (!selectedItem) {
-      setError('Please select an item');
-      return;
-    }
-    
-    const quantity = parseInt(selectedQuantity);
-    
-    if (isNaN(quantity) || quantity <= 0) {
-      setError('Quantity must be a positive number');
-      return;
-    }
-    
-    if (quantity > selectedItem.quantity) {
-      setError(`Only ${selectedItem.quantity} items available in stock`);
-      return;
+    if (!selectedItem) return;
+
+    const newItem: PurchaseItem = {
+      item: selectedItem._id || '',
+      costPerUnit: parseFloat(costPerUnit),
+      totalCost: parseFloat(totalCost)
+    };
+
+    if (selectedItem.trackingType === 'weight') {
+      newItem.weight = parseFloat(weight);
+      newItem.weightUnit = weightUnit;
+    } else {
+      newItem.quantity = parseInt(quantity);
     }
 
-    const newItem: SaleItem = {
-      item: selectedItem._id || '',
-      quantity,
-      priceAtSale: selectedItem.price
-    };
-    
     setFormData(prev => ({
       ...prev,
       items: [...(prev.items || []), newItem]
     }));
-    
+
+    // Reset form values
     setSelectedItem(null);
-    setSelectedQuantity('1');
-    setError(null);
+    setQuantity('1');
+    setWeight('0');
+    setCostPerUnit('0');
+    setTotalCost('0');
   };
 
   const handleRemoveItem = (index: number) => {
@@ -146,22 +184,14 @@ export default function NewSale() {
     }));
   };
 
-  const validateForm = (): string | null => {
-    if (!formData.items || formData.items.length === 0) {
-      return 'At least one item is required';
+  const handleSave = async () => {
+    if (!formData.supplier?.name) {
+      setError('Supplier name is required');
+      return;
     }
-    
-    if ((formData.total || 0) <= 0) {
-      return 'Sale total must be greater than zero';
-    }
-    
-    return null;
-  };
 
-  const handleSubmit = async () => {
-    const validationError = validateForm();
-    if (validationError) {
-      setError(validationError);
+    if (!formData.items?.length) {
+      setError('At least one item is required');
       return;
     }
 
@@ -169,19 +199,14 @@ export default function NewSale() {
     setError(null);
     
     try {
-      await salesApi.create(formData as Sale);
-      Alert.alert('Success', 'Sale was created successfully');
-      router.replace('/sales');
+      await purchasesApi.update(id as string, formData);
+      router.push('/purchases');
     } catch (err) {
-      console.error('Failed to create sale:', err);
-      setError('Failed to create sale. Please try again.');
+      console.error('Failed to update purchase:', err);
+      setError('Failed to update purchase. Please try again.');
     } finally {
       setSaving(false);
     }
-  };
-
-  const getItemById = (id: string): Item | undefined => {
-    return availableItems.find(item => item._id === id);
   };
 
   const formatCurrency = (amount: number) => {
@@ -191,6 +216,10 @@ export default function NewSale() {
     }).format(amount);
   };
 
+  const getItemById = (itemId: string): Item | undefined => {
+    return availableItems.find(item => item._id === itemId);
+  };
+
   if (loading) {
     return <LoadingIndicator />;
   }
@@ -198,8 +227,8 @@ export default function NewSale() {
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>New Sale</Text>
-        <Link href="/sales" asChild>
+        <Text style={styles.title}>Edit Purchase</Text>
+        <Link href="/purchases" asChild>
           <TouchableOpacity style={styles.backButton}>
             <Ionicons name="arrow-back" size={18} color="#0a7ea4" />
             <Text style={styles.backButtonText}>Back to List</Text>
@@ -210,49 +239,84 @@ export default function NewSale() {
       {error && <ErrorMessage message={error} />}
 
       <Card>
-        <Text style={styles.sectionTitle}>Customer Information</Text>
+        <Text style={styles.sectionTitle}>Supplier Information</Text>
         <View style={styles.divider} />
 
         <View style={styles.formGroup}>
-          <Text style={styles.label}>Customer Name</Text>
+          <Text style={styles.label}>Supplier Name *</Text>
           <TextInput
             style={styles.input}
-            value={formData.customerName}
-            onChangeText={(value) => handleTextChange('customerName', value)}
-            placeholder="Customer name (optional)"
+            value={formData.supplier?.name}
+            onChangeText={(value) => handleTextChange('supplier.name', value)}
+            placeholder="Supplier name"
             editable={!saving}
           />
         </View>
 
         <View style={styles.row}>
           <View style={[styles.formGroup, styles.halfWidth]}>
-            <Text style={styles.label}>Email</Text>
+            <Text style={styles.label}>Contact Name</Text>
             <TextInput
               style={styles.input}
-              value={formData.customerEmail}
-              onChangeText={(value) => handleTextChange('customerEmail', value)}
-              placeholder="Email (optional)"
-              keyboardType="email-address"
+              value={formData.supplier?.contactName}
+              onChangeText={(value) => handleTextChange('supplier.contactName', value)}
+              placeholder="Contact name"
               editable={!saving}
             />
           </View>
 
           <View style={[styles.formGroup, styles.halfWidth]}>
-            <Text style={styles.label}>Phone</Text>
+            <Text style={styles.label}>Email</Text>
             <TextInput
               style={styles.input}
-              value={formData.customerPhone}
-              onChangeText={(value) => handleTextChange('customerPhone', value)}
-              placeholder="Phone (optional)"
-              keyboardType="phone-pad"
+              value={formData.supplier?.email}
+              onChangeText={(value) => handleTextChange('supplier.email', value)}
+              placeholder="Email address"
+              keyboardType="email-address"
               editable={!saving}
             />
           </View>
         </View>
+
+        <View style={styles.row}>
+          <View style={[styles.formGroup, styles.halfWidth]}>
+            <Text style={styles.label}>Phone</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.supplier?.phone}
+              onChangeText={(value) => handleTextChange('supplier.phone', value)}
+              placeholder="Phone number"
+              keyboardType="phone-pad"
+              editable={!saving}
+            />
+          </View>
+
+          <View style={[styles.formGroup, styles.halfWidth]}>
+            <Text style={styles.label}>Invoice Number</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.invoiceNumber}
+              onChangeText={(value) => handleTextChange('invoiceNumber', value)}
+              placeholder="Invoice #"
+              editable={!saving}
+            />
+          </View>
+        </View>
+
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Purchase Date</Text>
+          <TextInput
+            style={styles.input}
+            value={formData.purchaseDate ? new Date(formData.purchaseDate).toISOString().split('T')[0] : ''}
+            onChangeText={(value) => handleTextChange('purchaseDate', value)}
+            placeholder="YYYY-MM-DD"
+            editable={!saving}
+          />
+        </View>
       </Card>
 
       <Card>
-        <Text style={styles.sectionTitle}>Sale Items</Text>
+        <Text style={styles.sectionTitle}>Purchase Items</Text>
         <View style={styles.divider} />
 
         <TouchableOpacity 
@@ -262,7 +326,7 @@ export default function NewSale() {
         >
           <Ionicons name="add-circle" size={20} color="white" />
           <Text style={styles.selectItemButtonText}>
-            {selectedItem ? 'Change Item' : 'Select Item'}
+            Add Another Item
           </Text>
         </TouchableOpacity>
 
@@ -276,78 +340,119 @@ export default function NewSale() {
             </View>
             
             <View style={styles.selectedItemActions}>
-              <View style={styles.quantityContainer}>
-                <Text style={styles.quantityLabel}>Quantity:</Text>
+              {selectedItem.trackingType === 'weight' ? (
+                <View style={styles.quantityContainer}>
+                  <Text style={styles.quantityLabel}>Weight:</Text>
+                  <TextInput
+                    style={styles.quantityInput}
+                    value={weight}
+                    onChangeText={setWeight}
+                    keyboardType="decimal-pad"
+                    editable={!saving}
+                  />
+                  <View style={styles.weightUnitPicker}>
+                    <Picker
+                      selectedValue={weightUnit}
+                      onValueChange={(value) => setWeightUnit(value as any)}
+                      enabled={!saving}
+                    >
+                      <Picker.Item label="oz" value="oz" />
+                      <Picker.Item label="lb" value="lb" />
+                      <Picker.Item label="g" value="g" />
+                      <Picker.Item label="kg" value="kg" />
+                    </Picker>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.quantityContainer}>
+                  <Text style={styles.quantityLabel}>Quantity:</Text>
+                  <TextInput
+                    style={styles.quantityInput}
+                    value={quantity}
+                    onChangeText={setQuantity}
+                    keyboardType="number-pad"
+                    editable={!saving}
+                  />
+                </View>
+              )}
+              
+              <View style={styles.costContainer}>
+                <Text style={styles.quantityLabel}>Cost/Unit: $</Text>
                 <TextInput
                   style={styles.quantityInput}
-                  value={selectedQuantity}
-                  onChangeText={setSelectedQuantity}
-                  keyboardType="number-pad"
+                  value={costPerUnit}
+                  onChangeText={setCostPerUnit}
+                  keyboardType="decimal-pad"
                   editable={!saving}
                 />
-                <Text style={styles.stockInfo}>
-                  (Max: {selectedItem.quantity})
-                </Text>
               </View>
-              
-              <TouchableOpacity
-                style={styles.addItemButton}
-                onPress={handleAddItem}
-                disabled={saving}
-              >
-                <Ionicons name="checkmark" size={20} color="white" />
-                <Text style={styles.addItemButtonText}>Add to Sale</Text>
-              </TouchableOpacity>
             </View>
+            
+            <View style={styles.totalCostContainer}>
+              <Text style={styles.totalCostLabel}>Total Cost:</Text>
+              <Text style={styles.totalCostValue}>{formatCurrency(parseFloat(totalCost))}</Text>
+            </View>
+              
+            <TouchableOpacity
+              style={styles.addItemButton}
+              onPress={handleAddItem}
+              disabled={saving}
+            >
+              <Ionicons name="checkmark" size={20} color="white" />
+              <Text style={styles.addItemButtonText}>Add to Purchase</Text>
+            </TouchableOpacity>
           </Card>
         )}
 
+        {/* Display existing items */}
         {formData.items && formData.items.length > 0 ? (
           <View style={styles.itemsList}>
-            {formData.items.map((saleItem, index) => {
-              const itemDetails = typeof saleItem.item === 'object' 
-                ? saleItem.item
-                : getItemById(saleItem.item);
-                
+            {formData.items.map((purchaseItem, index) => {
+              const itemDetails = typeof purchaseItem.item === 'object' 
+                ? purchaseItem.item
+                : getItemById(purchaseItem.item as string);
+              
               return (
-                <View key={index} style={styles.saleItemContainer}>
+                <View key={index} style={styles.purchaseItemContainer}>
                   {/* Item Image */}
                   {itemDetails?.imageUrl ? (
-                    <Image source={{ uri: itemDetails.imageUrl }} style={styles.saleItemImage} />
+                    <Image source={{ uri: itemDetails.imageUrl }} style={styles.purchaseItemImage} />
                   ) : (
-                    <View style={styles.saleItemImagePlaceholder}>
+                    <View style={styles.purchaseItemImagePlaceholder}>
                       <Ionicons name="image" size={20} color="#cccccc" />
                     </View>
                   )}
                   
-                  <View style={styles.saleItemInfo}>
-                    <Text style={styles.saleItemName}>
+                  <View style={styles.purchaseItemInfo}>
+                    <Text style={styles.purchaseItemName}>
                       {itemDetails ? itemDetails.name : 'Unknown Item'}
                     </Text>
                     
                     {/* Display tags */}
                     {itemDetails?.tags && itemDetails.tags.length > 0 && (
                       <View style={styles.tagsRow}>
-                        {itemDetails.tags.slice(0, 1).map(tag => (
+                        {itemDetails.tags.slice(0, 2).map(tag => (
                           <View key={tag} style={styles.tagBadge}>
                             <Text style={styles.tagText}>{tag}</Text>
                           </View>
                         ))}
-                        {itemDetails.tags.length > 1 && (
+                        {itemDetails.tags.length > 2 && (
                           <View style={styles.tagBadge}>
-                            <Text style={styles.tagText}>+{itemDetails.tags.length - 1}</Text>
+                            <Text style={styles.tagText}>+{itemDetails.tags.length - 2}</Text>
                           </View>
                         )}
                       </View>
                     )}
                     
-                    <Text style={styles.saleItemDetails}>
-                      {saleItem.quantity} × {formatCurrency(saleItem.priceAtSale)}
+                    <Text style={styles.purchaseItemDetails}>
+                      {purchaseItem.weight 
+                        ? `${purchaseItem.weight} ${purchaseItem.weightUnit} × ${formatCurrency(purchaseItem.costPerUnit)}`
+                        : `${purchaseItem.quantity} × ${formatCurrency(purchaseItem.costPerUnit)}`}
                     </Text>
                   </View>
-                  <View style={styles.saleItemActions}>
-                    <Text style={styles.saleItemTotal}>
-                      {formatCurrency(saleItem.quantity * saleItem.priceAtSale)}
+                  <View style={styles.purchaseItemActions}>
+                    <Text style={styles.purchaseItemTotal}>
+                      {formatCurrency(purchaseItem.totalCost)}
                     </Text>
                     <TouchableOpacity
                       onPress={() => handleRemoveItem(index)}
@@ -374,7 +479,7 @@ export default function NewSale() {
           <View style={styles.pickerContainer}>
             <Picker
               selectedValue={formData.paymentMethod}
-              onValueChange={(value) => setFormData(prev => ({ ...prev, paymentMethod: value }))}
+              onValueChange={(value) => setFormData(prev => ({ ...prev, paymentMethod: value as any }))}
               enabled={!saving}
               style={styles.picker}
             >
@@ -382,7 +487,25 @@ export default function NewSale() {
               <Picker.Item label="Credit Card" value="credit" />
               <Picker.Item label="Debit Card" value="debit" />
               <Picker.Item label="Check" value="check" />
+              <Picker.Item label="Bank Transfer" value="bank_transfer" />
               <Picker.Item label="Other" value="other" />
+            </Picker>
+          </View>
+        </View>
+
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Status</Text>
+          <View style={styles.pickerContainer}>
+            <Picker
+              selectedValue={formData.status}
+              onValueChange={(value) => setFormData(prev => ({ ...prev, status: value as any }))}
+              enabled={!saving}
+              style={styles.picker}
+            >
+              <Picker.Item label="Received" value="received" />
+              <Picker.Item label="Pending" value="pending" />
+              <Picker.Item label="Partially Received" value="partially_received" />
+              <Picker.Item label="Cancelled" value="cancelled" />
             </Picker>
           </View>
         </View>
@@ -393,7 +516,7 @@ export default function NewSale() {
             style={[styles.input, styles.textarea]}
             value={formData.notes}
             onChangeText={(value) => handleTextChange('notes', value)}
-            placeholder="Sale notes (optional)"
+            placeholder="Purchase notes (optional)"
             multiline
             numberOfLines={3}
             editable={!saving}
@@ -402,7 +525,7 @@ export default function NewSale() {
       </Card>
 
       <Card>
-        <Text style={styles.sectionTitle}>Sale Summary</Text>
+        <Text style={styles.sectionTitle}>Purchase Summary</Text>
         <View style={styles.divider} />
 
         <View style={styles.summaryRow}>
@@ -429,21 +552,21 @@ export default function NewSale() {
         </View>
 
         <View style={styles.summaryRowWithInput}>
-          <View style={styles.discountContainer}>
-            <Text style={styles.summaryLabel}>Discount</Text>
-            <View style={styles.discountInputContainer}>
+          <View style={styles.shippingContainer}>
+            <Text style={styles.summaryLabel}>Shipping Cost</Text>
+            <View style={styles.shippingInputContainer}>
               <Text style={styles.currencySymbol}>$</Text>
               <TextInput
-                style={styles.discountInput}
-                value={formData.discountAmount?.toString()}
-                onChangeText={(value) => handleTextChange('discountAmount', value)}
+                style={styles.shippingInput}
+                value={formData.shippingCost?.toString()}
+                onChangeText={(value) => handleTextChange('shippingCost', value)}
                 keyboardType="decimal-pad"
                 editable={!saving}
               />
             </View>
           </View>
           <Text style={styles.summaryValue}>
-            -{formatCurrency(formData.discountAmount || 0)}
+            {formatCurrency(formData.shippingCost || 0)}
           </Text>
         </View>
 
@@ -459,12 +582,12 @@ export default function NewSale() {
 
       <TouchableOpacity
         style={[styles.submitButton, saving && styles.submitButtonDisabled]}
-        onPress={handleSubmit}
+        onPress={handleSave}
         disabled={saving}
       >
-        <Ionicons name="checkmark-circle" size={20} color="white" />
+        <Ionicons name="save" size={20} color="white" />
         <Text style={styles.submitButtonText}>
-          {saving ? 'Processing...' : 'Complete Sale'}
+          {saving ? 'Saving...' : 'Update Purchase'}
         </Text>
       </TouchableOpacity>
 
@@ -524,7 +647,10 @@ export default function NewSale() {
                       )}
                       
                       <Text style={styles.itemOptionDetails}>
-                        In stock: {item.quantity} | SKU: {item.sku}
+                        {item.trackingType === 'quantity'
+                          ? `In stock: ${item.quantity} | SKU: ${item.sku}`
+                          : `In stock: ${item.weight} ${item.weightUnit} | SKU: ${item.sku}`
+                        }
                       </Text>
                     </View>
                     <Text style={styles.itemOptionPrice}>
@@ -668,9 +794,36 @@ const styles = StyleSheet.create({
     borderColor: '#ddd',
     borderRadius: 4,
     padding: 8,
-    width: 50,
+    width: 70,
     textAlign: 'center',
-    marginRight: 8,
+  },
+  weightUnitPicker: {
+    width: 100,
+    height: 40,
+    marginLeft: 8,
+  },
+  costContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  totalCostContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 16,
+    marginBottom: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  totalCostLabel: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  totalCostValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#0a7ea4',
   },
   stockInfo: {
     fontSize: 12,
@@ -679,6 +832,7 @@ const styles = StyleSheet.create({
   addItemButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#4caf50',
     paddingVertical: 8,
     paddingHorizontal: 12,
@@ -698,7 +852,7 @@ const styles = StyleSheet.create({
   itemsList: {
     marginTop: 16,
   },
-  saleItemContainer: {
+  purchaseItemContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -706,26 +860,58 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
-  saleItemInfo: {
+  purchaseItemInfo: {
     flex: 2,
   },
-  saleItemName: {
+  purchaseItemName: {
     fontSize: 16,
     fontWeight: '500',
   },
-  saleItemDetails: {
+  purchaseItemDetails: {
     fontSize: 14,
     color: '#757575',
   },
-  saleItemActions: {
+  purchaseItemActions: {
     flex: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  saleItemTotal: {
+  purchaseItemTotal: {
     fontSize: 16,
     fontWeight: '500',
+  },
+  purchaseItemImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 4,
+    marginRight: 10,
+  },
+  purchaseItemImagePlaceholder: {
+    width: 40,
+    height: 40,
+    borderRadius: 4,
+    marginRight: 10,
+    backgroundColor: '#f5f5f5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#eeeeee',
+  },
+  tagsRow: {
+    flexDirection: 'row',
+    marginTop: 2,
+    gap: 4,
+  },
+  tagBadge: {
+    backgroundColor: '#e0e0e0',
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+  },
+  tagText: {
+    fontSize: 10,
+    color: '#333',
   },
   summaryRow: {
     flexDirection: 'row',
@@ -759,11 +945,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginLeft: 8,
   },
-  discountContainer: {
+  shippingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  discountInputContainer: {
+  shippingInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
@@ -775,7 +961,7 @@ const styles = StyleSheet.create({
   currencySymbol: {
     fontSize: 16,
   },
-  discountInput: {
+  shippingInput: {
     padding: 8,
     width: 70,
   },
@@ -797,13 +983,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#4caf50',
+    backgroundColor: '#0a7ea4',
     padding: 16,
     borderRadius: 4,
     marginVertical: 16,
   },
   submitButtonDisabled: {
-    backgroundColor: '#a5d6a7',
+    backgroundColor: '#76b8c8',
   },
   submitButtonText: {
     color: 'white',
@@ -873,37 +1059,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#eeeeee',
-  },
-  saleItemImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 4,
-    marginRight: 10,
-  },
-  saleItemImagePlaceholder: {
-    width: 40,
-    height: 40,
-    borderRadius: 4,
-    marginRight: 10,
-    backgroundColor: '#f5f5f5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#eeeeee',
-  },
-  tagsRow: {
-    flexDirection: 'row',
-    marginTop: 2,
-    gap: 4,
-  },
-  tagBadge: {
-    backgroundColor: '#e0e0e0',
-    paddingVertical: 2,
-    paddingHorizontal: 6,
-    borderRadius: 12,
-  },
-  tagText: {
-    fontSize: 10,
-    color: '#333',
   },
 });
