@@ -10,7 +10,13 @@ export interface Item {
   quantity: number;
   price: number;
   description?: string;
+  imageUrl?: string;  // New field for storing image URLs
+  tags?: string[];    // New field for storing tags
   lastUpdated?: Date;
+  trackingType?: 'quantity' | 'weight';
+  weight?: number;
+  weightUnit?: 'oz' | 'lb' | 'g' | 'kg';
+  priceType?: 'each' | 'per_weight_unit';
 }
 
 // Define sale item interface
@@ -86,12 +92,22 @@ export const itemsApi = {
     const response = await api.get(`/api/items/${id}`);
     return response.data;
   },
-  create: async (item: Item): Promise<Item> => {
-    const response = await api.post('/api/items', item);
+  create: async (item: Item | FormData): Promise<Item> => {
+    // Handle both regular JSON and FormData
+    const config = item instanceof FormData 
+      ? { headers: { 'Content-Type': 'multipart/form-data' }} 
+      : {};
+      
+    const response = await api.post('/api/items', item, config);
     return response.data;
   },
-  update: async (id: string, item: Item): Promise<Item> => {
-    const response = await api.patch(`/api/items/${id}`, item);
+  update: async (id: string, item: Partial<Item> | FormData): Promise<Item> => {
+    // Handle both regular JSON and FormData
+    const config = item instanceof FormData 
+      ? { headers: { 'Content-Type': 'multipart/form-data' }} 
+      : {};
+      
+    const response = await api.patch(`/api/items/${id}`, item, config);
     return response.data;
   },
   delete: async (id: string): Promise<void> => {

@@ -8,7 +8,8 @@ import {
   TouchableOpacity, 
   Alert,
   Modal,
-  FlatList
+  FlatList,
+  Image
 } from 'react-native';
 import { Link, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -320,10 +321,36 @@ export default function EditSale() {
                 
               return (
                 <View key={index} style={styles.saleItemContainer}>
+                  {/* Add item image */}
+                  {itemDetails?.imageUrl ? (
+                    <Image source={{ uri: itemDetails.imageUrl }} style={styles.saleItemImage} />
+                  ) : (
+                    <View style={styles.saleItemImagePlaceholder}>
+                      <Ionicons name="image" size={20} color="#cccccc" />
+                    </View>
+                  )}
+                  
                   <View style={styles.saleItemInfo}>
                     <Text style={styles.saleItemName}>
                       {itemDetails ? itemDetails.name : 'Unknown Item'}
                     </Text>
+                    
+                    {/* Display tags */}
+                    {itemDetails?.tags && itemDetails.tags.length > 0 && (
+                      <View style={styles.tagsRow}>
+                        {itemDetails.tags.slice(0, 1).map(tag => (
+                          <View key={tag} style={styles.tagBadge}>
+                            <Text style={styles.tagText}>{tag}</Text>
+                          </View>
+                        ))}
+                        {itemDetails.tags.length > 1 && (
+                          <View style={styles.tagBadge}>
+                            <Text style={styles.tagText}>+{itemDetails.tags.length - 1}</Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
+                    
                     <Text style={styles.saleItemDetails}>
                       {saleItem.quantity} × {formatCurrency(saleItem.priceAtSale)}
                     </Text>
@@ -494,8 +521,34 @@ export default function EditSale() {
                     style={styles.itemOption}
                     onPress={() => handleSelectItem(item)}
                   >
-                    <View>
+                    {/* Add item image */}
+                    {item.imageUrl ? (
+                      <Image source={{ uri: item.imageUrl }} style={styles.itemOptionImage} />
+                    ) : (
+                      <View style={styles.itemOptionImagePlaceholder}>
+                        <Ionicons name="image" size={20} color="#cccccc" />
+                      </View>
+                    )}
+                    
+                    <View style={styles.itemOptionInfo}>
                       <Text style={styles.itemOptionName}>{item.name}</Text>
+                      
+                      {/* Display tags */}
+                      {item.tags && item.tags.length > 0 && (
+                        <View style={styles.tagsRow}>
+                          {item.tags.slice(0, 2).map(tag => (
+                            <View key={tag} style={styles.tagBadge}>
+                              <Text style={styles.tagText}>{tag}</Text>
+                            </View>
+                          ))}
+                          {item.tags.length > 2 && (
+                            <View style={styles.tagBadge}>
+                              <Text style={styles.tagText}>+{item.tags.length - 2}</Text>
+                            </View>
+                          )}
+                        </View>
+                      )}
+                      
                       <Text style={styles.itemOptionDetails}>
                         In stock: {item.quantity} | SKU: {item.sku}
                       </Text>
@@ -817,6 +870,27 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
+  itemOptionImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 4,
+    marginRight: 10,
+  },
+  itemOptionImagePlaceholder: {
+    width: 40,
+    height: 40,
+    borderRadius: 4,
+    marginRight: 10,
+    backgroundColor: '#f5f5f5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#eeeeee',
+  },
+  itemOptionInfo: {
+    flex: 1,
+    marginLeft: 10,
+  },
   itemOptionName: {
     fontSize: 16,
     fontWeight: '500',
@@ -829,5 +903,37 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     color: '#0a7ea4',
+  },
+  tagsRow: {
+    flexDirection: 'row',
+    marginTop: 2,
+    gap: 4,
+  },
+  tagBadge: {
+    backgroundColor: '#e0e0e0',
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+  },
+  tagText: {
+    fontSize: 10,
+    color: '#333',
+  },
+  saleItemImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 4,
+    marginRight: 10,
+  },
+  saleItemImagePlaceholder: {
+    width: 40,
+    height: 40,
+    borderRadius: 4,
+    marginRight: 10,
+    backgroundColor: '#f5f5f5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#eeeeee',
   },
 });

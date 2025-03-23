@@ -16,9 +16,10 @@ export default function EditInventoryItem() {
     category: '',
     quantity: 0,
     price: 0,
-    description: ''
+    description: '',
+    tags: []
   });
-  
+  const [imageUri, setImageUri] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,8 +36,14 @@ export default function EditInventoryItem() {
           category: data.category,
           quantity: data.quantity,
           price: data.price,
-          description: data.description || ''
+          description: data.description || '',
+          tags: data.tags || []
         });
+        
+        // Set image preview if available
+        if (data.imageUrl) {
+          setImageUri(data.imageUrl);
+        }
       } catch (err) {
         console.error('Failed to fetch item:', err);
         setError('Failed to load item details. The item may have been deleted.');
@@ -79,7 +86,37 @@ export default function EditInventoryItem() {
     setError(null);
     
     try {
-      await itemsApi.update(id, formData);
+      if (imageUri && !imageUri.startsWith('http')) {  // Check if it's a newly selected image
+        const formDataToSend = new FormData();
+        
+        // Add text fields
+        Object.entries(formData).forEach(([key, value]) => {
+          if (key !== 'tags') {
+            formDataToSend.append(key, String(value));
+          }
+        });
+        
+        // Add tags as JSON string
+        if (formData.tags && formData.tags.length > 0) {
+          formDataToSend.append('tags', JSON.stringify(formData.tags));
+        }
+        
+        // Add image file
+        const uriParts = imageUri.split('.');
+        const fileType = uriParts[uriParts.length - 1];
+        
+        formDataToSend.append('image', {
+          uri: imageUri,
+          name: `photo.${fileType}`,
+          type: `image/${fileType}`
+        } as any);
+        
+        await itemsApi.update(id, formDataToSend);
+      } else {
+        // No new image, just send JSON
+        await itemsApi.update(id, formData);
+      }
+      
       Alert.alert('Success', 'Item was updated successfully');
       router.replace(`/inventory/${id}`);
     } catch (err) {

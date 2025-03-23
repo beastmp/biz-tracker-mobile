@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert, Image } from 'react-native';
 import { useLocalSearchParams, useRouter, Link } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { itemsApi, Item } from '../../src/services/api';
@@ -128,6 +128,17 @@ export default function InventoryDetail() {
       </View>
 
       <View style={styles.content}>
+        {/* Add Image Card */}
+        {item.imageUrl && (
+          <Card style={styles.imageCard}>
+            <Image 
+              source={{ uri: item.imageUrl }} 
+              style={styles.itemImage} 
+              resizeMode="contain"
+            />
+          </Card>
+        )}
+
         <Card style={styles.detailsCard}>
           <Text style={styles.sectionTitle}>Item Details</Text>
           <View style={styles.divider} />
@@ -143,6 +154,20 @@ export default function InventoryDetail() {
               <Text style={styles.categoryText}>{item.category}</Text>
             </View>
           </View>
+          
+          {/* Add Tags Section */}
+          {item.tags && item.tags.length > 0 && (
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Tags</Text>
+              <View style={styles.tagsContainer}>
+                {item.tags.map(tag => (
+                  <View key={tag} style={styles.tagBadge}>
+                    <Text style={styles.tagText}>{tag}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
           
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Description</Text>
@@ -292,5 +317,31 @@ const styles = StyleSheet.create({
   },
   categoryText: {
     fontSize: 14,
+  },
+  imageCard: {
+    marginBottom: 16,
+    padding: 0,
+    overflow: 'hidden',
+  },
+  itemImage: {
+    width: '100%',
+    height: 250,
+    borderRadius: 8,
+  },
+  tagsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 4,
+    gap: 8,
+  },
+  tagBadge: {
+    backgroundColor: '#e0e0e0',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 16,
+  },
+  tagText: {
+    fontSize: 14,
+    color: '#333',
   },
 });

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert, Image } from 'react-native';
 import { useLocalSearchParams, useRouter, Link } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { salesApi, Sale } from '../../src/services/api';
@@ -255,11 +255,45 @@ export default function SaleDetail() {
             const itemName = typeof item.item === 'object' && item.item.name 
               ? item.item.name 
               : 'Unknown Item';
+            
+            const itemImage = typeof item.item === 'object' && item.item.imageUrl
+              ? item.item.imageUrl
+              : null;
+              
+            const itemTags = typeof item.item === 'object' && item.item.tags
+              ? item.item.tags
+              : [];
               
             return (
               <View key={index} style={styles.saleItemContainer}>
+                {/* Item Image */}
+                {itemImage ? (
+                  <Image source={{ uri: itemImage }} style={styles.itemImage} />
+                ) : (
+                  <View style={styles.itemImagePlaceholder}>
+                    <Ionicons name="image" size={24} color="#cccccc" />
+                  </View>
+                )}
+                
                 <View style={styles.saleItemDetails}>
                   <Text style={styles.saleItemName}>{itemName}</Text>
+                  
+                  {/* Display tags */}
+                  {itemTags.length > 0 && (
+                    <View style={styles.tagsRow}>
+                      {itemTags.slice(0, 2).map(tag => (
+                        <View key={tag} style={styles.tagBadge}>
+                          <Text style={styles.tagText}>{tag}</Text>
+                        </View>
+                      ))}
+                      {itemTags.length > 2 && (
+                        <View style={styles.tagBadge}>
+                          <Text style={styles.tagText}>+{itemTags.length - 2}</Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
+                  
                   <Text style={styles.saleItemQuantity}>{item.quantity} × {formatCurrency(item.priceAtSale)}</Text>
                 </View>
                 <Text style={styles.saleItemTotal}>{formatCurrency(item.quantity * item.priceAtSale)}</Text>
@@ -410,5 +444,38 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     textAlign: 'right',
-  }
+  },
+  itemImage: {
+    width: 50,
+    height: 50,
+    borderRadius: 6,
+    marginRight: 10,
+  },
+  itemImagePlaceholder: {
+    width: 50,
+    height: 50,
+    borderRadius: 6,
+    marginRight: 10,
+    backgroundColor: '#f5f5f5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#eeeeee',
+  },
+  tagsRow: {
+    flexDirection: 'row',
+    marginTop: 2,
+    marginBottom: 2,
+    gap: 4,
+  },
+  tagBadge: {
+    backgroundColor: '#e0e0e0',
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+  },
+  tagText: {
+    fontSize: 10,
+    color: '#333',
+  },
 });

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, FlatList, TouchableOpacity, TextInput } from 'react-native';
+import { StyleSheet, Text, View, FlatList, TouchableOpacity, TextInput, Image } from 'react-native';
 import { Link } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { itemsApi, Item } from '../../src/services/api';
@@ -37,7 +37,8 @@ export default function InventoryList() {
       const filtered = items.filter(item => 
         item.name.toLowerCase().includes(lowerCaseQuery) || 
         item.sku.toLowerCase().includes(lowerCaseQuery) ||
-        item.category.toLowerCase().includes(lowerCaseQuery)
+        item.category.toLowerCase().includes(lowerCaseQuery) ||
+        (item.tags && item.tags.some(tag => tag.toLowerCase().includes(lowerCaseQuery)))
       );
       setFilteredItems(filtered);
     } else {
@@ -72,7 +73,7 @@ export default function InventoryList() {
         <Ionicons name="search" size={20} color="#757575" style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search by name, SKU, or category..."
+          placeholder="Search by name, SKU, category or tag..."
           value={searchQuery}
           onChangeText={setSearchQuery}
           clearButtonMode="while-editing"
@@ -96,11 +97,37 @@ export default function InventoryList() {
               <TouchableOpacity>
                 <Card>
                   <View style={styles.itemContainer}>
+                    {item.imageUrl ? (
+                      <Image 
+                        source={{ uri: item.imageUrl }} 
+                        style={styles.itemImage} 
+                      />
+                    ) : (
+                      <View style={styles.itemImagePlaceholder}>
+                        <Ionicons name="image" size={24} color="#cccccc" />
+                      </View>
+                    )}
+                    
                     <View style={styles.itemInfo}>
                       <Text style={styles.itemName}>{item.name}</Text>
                       <Text style={styles.itemDetails}>
                         SKU: {item.sku} | Category: {item.category}
                       </Text>
+                      
+                      {item.tags && item.tags.length > 0 && (
+                        <View style={styles.tagsRow}>
+                          {item.tags.slice(0, 2).map(tag => (
+                            <View key={tag} style={styles.tagBadge}>
+                              <Text style={styles.tagText}>{tag}</Text>
+                            </View>
+                          ))}
+                          {item.tags.length > 2 && (
+                            <View style={styles.tagBadge}>
+                              <Text style={styles.tagText}>+{item.tags.length - 2}</Text>
+                            </View>
+                          )}
+                        </View>
+                      )}
                     </View>
                     <View style={styles.itemMetrics}>
                       <Text style={styles.itemPrice}>{formatCurrency(item.price)}</Text>
@@ -186,7 +213,7 @@ const styles = StyleSheet.create({
   },
   itemContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   itemInfo: {
     flex: 2,
@@ -222,5 +249,37 @@ const styles = StyleSheet.create({
   lowStock: {
     color: '#ff9800',
     fontWeight: '500',
+  },
+  itemImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    marginRight: 12,
+  },
+  itemImagePlaceholder: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    marginRight: 12,
+    backgroundColor: '#f5f5f5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#eeeeee',
+  },
+  tagsRow: {
+    flexDirection: 'row',
+    marginTop: 4,
+    gap: 6,
+  },
+  tagBadge: {
+    backgroundColor: '#e0e0e0',
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+  },
+  tagText: {
+    fontSize: 12,
+    color: '#333',
   },
 });

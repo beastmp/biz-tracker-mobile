@@ -1,7 +1,18 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, TextInput, TouchableOpacity, Alert } from 'react-native';
+import { 
+  StyleSheet, 
+  Text, 
+  View, 
+  ScrollView, 
+  TextInput, 
+  TouchableOpacity, 
+  Alert,
+  Image,
+  FlatList 
+} from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { itemsApi, Item } from '../../src/services/api';
 import Card from '../../src/components/ui/Card';
 import ErrorMessage from '../../src/components/ui/ErrorMessage';
@@ -14,9 +25,12 @@ export default function NewInventoryItem() {
     category: '',
     quantity: 0,
     price: 0,
-    description: ''
+    description: '',
+    tags: []
   });
   
+  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [currentTag, setCurrentTag] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,6 +42,47 @@ export default function NewInventoryItem() {
     } else {
       setFormData(prev => ({ ...prev, [field]: value }));
     }
+  };
+
+  const pickImage = async () => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    
+    if (!permissionResult.granted) {
+      Alert.alert('Permission Required', 'You need to grant permission to access your photo library');
+      return;
+    }
+    
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.8,
+    });
+    
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      setImageUri(result.assets[0].uri);
+    }
+  };
+
+  const handleAddTag = () => {
+    if (!currentTag.trim()) return;
+    
+    // Make sure there are no duplicates
+    if (formData.tags && formData.tags.includes(currentTag.trim())) {
+      setCurrentTag('');
+      return;
+    }
+    
+    const updatedTags = [...(formData.tags || []), currentTag.trim()];
+    setFormData(prev => ({ ...prev, tags: updatedTags }));
+    setCurrentTag('');
+  };
+  
+  const handleRemoveTag = (tagToRemove: string) => {
+    if (!formData.tags) return;
+    
+    const updatedTags = formData.tags.filter(tag => tag !== tagToRemove);
+    setFormData(prev => ({ ...prev, tags: updatedTags }));
   };
 
   const validateForm = (): string | null => {
@@ -50,7 +105,38 @@ export default function NewInventoryItem() {
     setError(null);
     
     try {
-      await itemsApi.create(formData);
+      // If we have an image, use FormData
+      if (imageUri) {
+        const formDataToSend = new FormData();
+        
+        // Add text fields
+        Object.entries(formData).forEach(([key, value]) => {
+          if (key !== 'tags') {
+            formDataToSend.append(key, String(value));
+          }
+        });
+        
+        // Add tags as JSON string
+        if (formData.tags && formData.tags.length > 0) {
+          formDataToSend.append('tags', JSON.stringify(formData.tags));
+        }
+        
+        // Add image file
+        const uriParts = imageUri.split('.');
+        const fileType = uriParts[uriParts.length - 1];
+        
+        formDataToSend.append('image', {
+          uri: imageUri,
+          name: `photo.${fileType}`,
+          type: `image/${fileType}`
+        } as any);
+        
+        await itemsApi.create(formDataToSend);
+      } else {
+        // No image, just send JSON
+        await itemsApi.create(formData);
+      }
+      
       Alert.alert('Success', 'Item was created successfully');
       router.replace('/inventory');
     } catch (err) {
@@ -76,6 +162,30 @@ export default function NewInventoryItem() {
       {error && <ErrorMessage message={error} />}
 
       <Card>
+        {/* Image Picker */}
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Item Image</Text>
+          <View style={styles.imageContainer}>
+            {imageUri ? (
+              <View style={styles.selectedImageContainer}>
+                <Image source={{ uri: imageUri }} style={styles.selectedImage} />
+                <TouchableOpacity 
+                  style={styles.removeImageButton} 
+                  onPress={() => setImageUri(null)}
+                >
+                  <Ionicons name="close-circle" size={24} color="#cc0000" />
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity style={styles.imagePlaceholder} onPress={pickImage}>
+                <Ionicons name="camera" size={40} color="#757575" />
+                <Text style={styles.imagePlaceholderText}>Tap to add image</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
+        {/* Basic Info Fields */}
         <View style={styles.formGroup}>
           <Text style={styles.label}>Name *</Text>
           <TextInput
@@ -109,6 +219,42 @@ export default function NewInventoryItem() {
           />
         </View>
 
+        {/* Tags Input */}
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Tags</Text>
+          <View style={styles.tagInputContainer}>
+            <TextInput
+              style={styles.tagInput}
+              value={currentTag}
+              onChangeText={setCurrentTag}
+              placeholder="Add tags..."
+              editable={!saving}
+            />
+            <TouchableOpacity 
+              style={[styles.addTagButton, !currentTag.trim() && styles.disabledButton]} 
+              onPress={handleAddTag}
+              disabled={!currentTag.trim() || saving}
+            >
+              <Ionicons name="add" size={24} color="white" />
+            </TouchableOpacity>
+          </View>
+          
+          {formData.tags && formData.tags.length > 0 ? (
+            <View style={styles.tagsContainer}>
+              {formData.tags.map(tag => (
+                <View key={tag} style={styles.tagBadge}>
+                  <Text style={styles.tagText}>{tag}</Text>
+                  <TouchableOpacity onPress={() => handleRemoveTag(tag)}>
+                    <Ionicons name="close" size={16} color="#333" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <Text style={styles.helperText}>Add tags to help organize your inventory</Text>
+          )}
+        </View>
+
         <View style={styles.row}>
           <View style={[styles.formGroup, styles.halfWidth]}>
             <Text style={styles.label}>Quantity *</Text>
@@ -116,25 +262,21 @@ export default function NewInventoryItem() {
               style={styles.input}
               value={formData.quantity.toString()}
               onChangeText={(value) => handleChange('quantity', value)}
-              keyboardType="number-pad"
-              placeholder="0"
+              keyboardType="numeric"
               editable={!saving}
             />
           </View>
 
           <View style={[styles.formGroup, styles.halfWidth]}>
             <Text style={styles.label}>Price *</Text>
-            <View style={styles.priceContainer}>
-              <Text style={styles.priceCurrency}>$</Text>
-              <TextInput
-                style={styles.priceInput}
-                value={formData.price.toString()}
-                onChangeText={(value) => handleChange('price', value)}
-                keyboardType="decimal-pad"
-                placeholder="0.00"
-                editable={!saving}
-              />
-            </View>
+            <TextInput
+              style={styles.input}
+              value={formData.price.toString()}
+              onChangeText={(value) => handleChange('price', value)}
+              keyboardType="decimal-pad"
+              placeholder="0.00"
+              editable={!saving}
+            />
           </View>
         </View>
 
@@ -259,5 +401,90 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     marginLeft: 8,
+  },
+  imageContainer: {
+    marginBottom: 16,
+  },
+  selectedImageContainer: {
+    position: 'relative',
+    width: '100%',
+    height: 200,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  selectedImage: {
+    width: '100%',
+    height: '100%',
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    borderRadius: 15,
+  },
+  imagePlaceholder: {
+    width: '100%',
+    height: 150,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f9f9f9',
+  },
+  imagePlaceholderText: {
+    marginTop: 8,
+    color: '#757575',
+  },
+  tagInputContainer: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  tagInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 4,
+    padding: 12,
+    fontSize: 16,
+    backgroundColor: 'white',
+    marginRight: 8,
+  },
+  addTagButton: {
+    backgroundColor: '#0a7ea4',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 48,
+    borderRadius: 4,
+  },
+  disabledButton: {
+    backgroundColor: '#cccccc',
+  },
+  tagsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 8,
+    gap: 8,
+  },
+  tagBadge: {
+    backgroundColor: '#e0e0e0',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  tagText: {
+    fontSize: 14,
+    color: '#333',
+  },
+  helperText: {
+    fontSize: 14,
+    color: '#757575',
+    fontStyle: 'italic',
+    marginTop: 8,
   },
 });
