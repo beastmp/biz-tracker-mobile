@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -8,7 +8,8 @@ import {
   TouchableOpacity, 
   Alert,
   Image,
-  FlatList 
+  FlatList,
+  Modal 
 } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,78 +20,136 @@ import ErrorMessage from '../../../src/components/ui/ErrorMessage';
 
 export default function NewInventoryItem() {
   const router = useRouter();
-  const [formData, setFormData] = useState<Omit<Item, '_id'>>({
+  const [formData, setFormData] = useState<Partial<Item>>({
     name: '',
     sku: '',
-    category: '',
-    quantity: 0,
-    price: 0,
     description: '',
-    tags: []
+    price: 0,
+    cost: 0,
+    quantity: 0,
+    category: '',
+    tags: [],
+    imageUrl: ''
   });
   
   const [imageUri, setImageUri] = useState<string | null>(null);
-  const [currentTag, setCurrentTag] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleChange = (field: keyof typeof formData, value: string) => {
-    if (field === 'quantity' || field === 'price') {
-      // Convert to number
-      const numValue = parseFloat(value) || 0;
-      setFormData(prev => ({ ...prev, [field]: numValue }));
-    } else {
-      setFormData(prev => ({ ...prev, [field]: value }));
+  // New states for category and tag suggestions
+  const [categories, setCategories] = useState<string[]>([]);
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [newTag, setNewTag] = useState('');
+  const [categoryModalVisible, setCategoryModalVisible] = useState(false);
+  const [tagModalVisible, setTagModalVisible] = useState(false);
+  const [filteredCategories, setFilteredCategories] = useState<string[]>([]);
+  const [filteredTags, setFilteredTags] = useState<string[]>([]);
+
+  // Fetch next SKU, categories and tags on component mount
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // Fetch all data in parallel
+        const [nextSku, categoriesData, tagsData] = await Promise.all([
+          itemsApi.getNextSku(),
+          itemsApi.getCategories(),
+          itemsApi.getTags()
+        ]);
+        
+        // Set next available SKU
+        setFormData(prev => ({ ...prev, sku: nextSku }));
+        
+        // Set categories and tags
+        setCategories(categoriesData);
+        setAllTags(tagsData);
+        setFilteredCategories(categoriesData);
+        setFilteredTags(tagsData);
+      } catch (err) {
+        console.error('Error fetching data:', err);
+        setError('Failed to load form data. Please check your connection.');
+      }
+    };
+    
+    fetchData();
+  }, []);
+
+  const handleChange = (field: string, value: string | number) => {
+    if (field === 'category') {
+      // Filter categories as user types
+      const filtered = categories.filter(cat => 
+        cat.toLowerCase().includes(value.toString().toLowerCase())
+      );
+      setFilteredCategories(filtered);
     }
+    
+    setFormData(prev => ({ ...prev, [field]: value }));
   };
 
   const pickImage = async () => {
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    
-    if (!permissionResult.granted) {
-      Alert.alert('Permission Required', 'You need to grant permission to access your photo library');
-      return;
-    }
-    
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [4, 3],
-      quality: 0.8,
+      quality: 1,
     });
-    
-    if (!result.canceled && result.assets && result.assets.length > 0) {
+
+    if (!result.canceled) {
       setImageUri(result.assets[0].uri);
+      setFormData(prev => ({ ...prev, imageUrl: result.assets[0].uri }));
     }
   };
 
   const handleAddTag = () => {
-    if (!currentTag.trim()) return;
+    if (!newTag.trim()) return;
     
-    // Make sure there are no duplicates
-    if (formData.tags && formData.tags.includes(currentTag.trim())) {
-      setCurrentTag('');
-      return;
+    // Only add if it's not already in the array
+    if (!formData.tags?.includes(newTag.trim())) {
+      setFormData(prev => ({
+        ...prev,
+        tags: [...(prev.tags || []), newTag.trim()]
+      }));
     }
     
-    const updatedTags = [...(formData.tags || []), currentTag.trim()];
-    setFormData(prev => ({ ...prev, tags: updatedTags }));
-    setCurrentTag('');
-  };
-  
-  const handleRemoveTag = (tagToRemove: string) => {
-    if (!formData.tags) return;
-    
-    const updatedTags = formData.tags.filter(tag => tag !== tagToRemove);
-    setFormData(prev => ({ ...prev, tags: updatedTags }));
+    setNewTag('');
+    setTagModalVisible(false);
   };
 
-  const validateForm = (): string | null => {
-    if (!formData.name.trim()) return 'Name is required';
-    if (!formData.sku.trim()) return 'SKU is required';
-    if (!formData.category.trim()) return 'Category is required';
-    if (formData.quantity < 0) return 'Quantity cannot be negative';
-    if (formData.price < 0) return 'Price cannot be negative';
+  const handleRemoveTag = (tagToRemove: string) => {
+    setFormData(prev => ({
+      ...prev,
+      tags: prev.tags?.filter(tag => tag !== tagToRemove) || []
+    }));
+  };
+
+  const filterTags = (text: string) => {
+    const filtered = allTags.filter(tag => 
+      tag.toLowerCase().includes(text.toLowerCase())
+    );
+    setFilteredTags(filtered);
+    setNewTag(text);
+  };
+
+  const selectCategory = (category: string) => {
+    setFormData(prev => ({ ...prev, category }));
+    setCategoryModalVisible(false);
+  };
+
+  const selectTag = (tag: string) => {
+    if (!formData.tags?.includes(tag)) {
+      setFormData(prev => ({
+        ...prev,
+        tags: [...(prev.tags || []), tag]
+      }));
+    }
+    setNewTag('');
+    setTagModalVisible(false);
+  };
+
+  const validateForm = () => {
+    if (!formData.name) return 'Item name is required';
+    if (!formData.sku) return 'SKU is required';
+    if (formData.price === undefined || formData.price < 0) return 'Price must be a non-negative number';
+    if (formData.quantity === undefined || formData.quantity < 0) return 'Quantity must be a non-negative number';
     return null;
   };
 
@@ -105,44 +164,15 @@ export default function NewInventoryItem() {
     setError(null);
     
     try {
-      // If we have an image, use FormData
-      if (imageUri) {
-        const formDataToSend = new FormData();
-        
-        // Add text fields
-        Object.entries(formData).forEach(([key, value]) => {
-          if (key !== 'tags') {
-            formDataToSend.append(key, String(value));
-          }
-        });
-        
-        // Add tags as JSON string
-        if (formData.tags && formData.tags.length > 0) {
-          formDataToSend.append('tags', JSON.stringify(formData.tags));
-        }
-        
-        // Add image file
-        const uriParts = imageUri.split('.');
-        const fileType = uriParts[uriParts.length - 1];
-        
-        formDataToSend.append('image', {
-          uri: imageUri,
-          name: `photo.${fileType}`,
-          type: `image/${fileType}`
-        } as any);
-        
-        await itemsApi.create(formDataToSend);
-      } else {
-        // No image, just send JSON
-        await itemsApi.create(formData);
-      }
-      
-      Alert.alert('Success', 'Item was created successfully');
-      router.replace('/inventory');
+      await itemsApi.create(formData);
+      Alert.alert(
+        "Success",
+        "Item created successfully",
+        [{ text: "OK", onPress: () => router.replace('/inventory') }]
+      );
     } catch (err) {
-      console.error('Failed to save item:', err);
-      setError('Failed to save item. Please try again.');
-    } finally {
+      console.error('Error creating item:', err);
+      setError('Failed to create item. Please try again.');
       setSaving(false);
     }
   };
@@ -162,7 +192,6 @@ export default function NewInventoryItem() {
       {error && <ErrorMessage message={error} />}
 
       <Card>
-        {/* Image Picker */}
         <View style={styles.formGroup}>
           <Text style={styles.label}>Item Image</Text>
           <View style={styles.imageContainer}>
@@ -185,7 +214,6 @@ export default function NewInventoryItem() {
           </View>
         </View>
 
-        {/* Basic Info Fields */}
         <View style={styles.formGroup}>
           <Text style={styles.label}>Name *</Text>
           <TextInput
@@ -198,61 +226,58 @@ export default function NewInventoryItem() {
         </View>
 
         <View style={styles.formGroup}>
-          <Text style={styles.label}>SKU *</Text>
+          <Text style={styles.label}>SKU</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, styles.disabledInput]}
             value={formData.sku}
-            onChangeText={(value) => handleChange('sku', value)}
-            placeholder="Stock keeping unit"
-            editable={!saving}
+            editable={false}
+            placeholder="Auto-generated SKU"
           />
+          <Text style={styles.helperText}>Auto-generated 10-digit SKU</Text>
         </View>
 
         <View style={styles.formGroup}>
-          <Text style={styles.label}>Category *</Text>
-          <TextInput
+          <Text style={styles.label}>Category</Text>
+          <TouchableOpacity 
             style={styles.input}
-            value={formData.category}
-            onChangeText={(value) => handleChange('category', value)}
-            placeholder="Item category"
-            editable={!saving}
-          />
+            onPress={() => setCategoryModalVisible(true)}
+            disabled={saving}
+          >
+            <View style={styles.pickerDisplayContainer}>
+              <Text style={formData.category ? styles.inputText : styles.placeholderText}>
+                {formData.category || "Select a category"}
+              </Text>
+              <Ionicons name="chevron-down" size={20} color="#757575" />
+            </View>
+          </TouchableOpacity>
         </View>
 
-        {/* Tags Input */}
         <View style={styles.formGroup}>
           <Text style={styles.label}>Tags</Text>
-          <View style={styles.tagInputContainer}>
-            <TextInput
-              style={styles.tagInput}
-              value={currentTag}
-              onChangeText={setCurrentTag}
-              placeholder="Add tags..."
-              editable={!saving}
-            />
+          <View style={styles.tagsContainer}>
+            {formData.tags && formData.tags.length > 0 ? (
+              <View style={styles.tagChipsContainer}>
+                {formData.tags.map((tag, index) => (
+                  <View key={index} style={styles.tagChip}>
+                    <Text style={styles.tagChipText}>{tag}</Text>
+                    <TouchableOpacity onPress={() => handleRemoveTag(tag)}>
+                      <Ionicons name="close-circle" size={16} color="#666" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.placeholderText}>No tags added</Text>
+            )}
             <TouchableOpacity 
-              style={[styles.addTagButton, !currentTag.trim() && styles.disabledButton]} 
-              onPress={handleAddTag}
-              disabled={!currentTag.trim() || saving}
+              style={styles.addTagButton} 
+              onPress={() => setTagModalVisible(true)}
+              disabled={saving}
             >
-              <Ionicons name="add" size={24} color="white" />
+              <Ionicons name="add" size={20} color="#0a7ea4" />
+              <Text style={styles.addTagButtonText}>Add Tag</Text>
             </TouchableOpacity>
           </View>
-          
-          {formData.tags && formData.tags.length > 0 ? (
-            <View style={styles.tagsContainer}>
-              {formData.tags.map(tag => (
-                <View key={tag} style={styles.tagBadge}>
-                  <Text style={styles.tagText}>{tag}</Text>
-                  <TouchableOpacity onPress={() => handleRemoveTag(tag)}>
-                    <Ionicons name="close" size={16} color="#333" />
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </View>
-          ) : (
-            <Text style={styles.helperText}>Add tags to help organize your inventory</Text>
-          )}
         </View>
 
         <View style={styles.row}>
@@ -260,23 +285,44 @@ export default function NewInventoryItem() {
             <Text style={styles.label}>Quantity *</Text>
             <TextInput
               style={styles.input}
-              value={formData.quantity.toString()}
-              onChangeText={(value) => handleChange('quantity', value)}
-              keyboardType="numeric"
+              value={formData.quantity?.toString()}
+              onChangeText={(value) => handleChange('quantity', parseInt(value) || 0)}
+              keyboardType="number-pad"
+              placeholder="0"
               editable={!saving}
             />
           </View>
 
           <View style={[styles.formGroup, styles.halfWidth]}>
             <Text style={styles.label}>Price *</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.price.toString()}
-              onChangeText={(value) => handleChange('price', value)}
-              keyboardType="decimal-pad"
-              placeholder="0.00"
-              editable={!saving}
-            />
+            <View style={styles.priceContainer}>
+              <Text style={styles.priceCurrency}>$</Text>
+              <TextInput
+                style={styles.priceInput}
+                value={formData.price?.toString()}
+                onChangeText={(value) => handleChange('price', parseFloat(value) || 0)}
+                keyboardType="decimal-pad"
+                placeholder="0.00"
+                editable={!saving}
+              />
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.row}>
+          <View style={[styles.formGroup, styles.halfWidth]}>
+            <Text style={styles.label}>Cost</Text>
+            <View style={styles.priceContainer}>
+              <Text style={styles.priceCurrency}>$</Text>
+              <TextInput
+                style={styles.priceInput}
+                value={formData.cost?.toString()}
+                onChangeText={(value) => handleChange('cost', parseFloat(value) || 0)}
+                keyboardType="decimal-pad"
+                placeholder="0.00"
+                editable={!saving}
+              />
+            </View>
           </View>
         </View>
 
@@ -300,10 +346,118 @@ export default function NewInventoryItem() {
         >
           <Ionicons name="save" size={18} color="white" />
           <Text style={styles.saveButtonText}>
-            {saving ? 'Saving...' : 'Save Item'}
+            {saving ? 'Saving...' : 'Create Item'}
           </Text>
         </TouchableOpacity>
       </Card>
+
+      {/* Category Selection Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={categoryModalVisible}
+        onRequestClose={() => setCategoryModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Category</Text>
+              <TouchableOpacity onPress={() => setCategoryModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#000" />
+              </TouchableOpacity>
+            </View>
+            
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search or enter new category"
+              value={formData.category}
+              onChangeText={(value) => handleChange('category', value)}
+            />
+            
+            <FlatList
+              data={filteredCategories}
+              keyExtractor={(item, index) => index.toString()}
+              renderItem={({ item }) => (
+                <TouchableOpacity 
+                  style={styles.suggestionItem}
+                  onPress={() => selectCategory(item)}
+                >
+                  <Text style={styles.suggestionText}>{item}</Text>
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>
+                  {formData.category ? 'No matching categories. Press "Add" to create new category.' : 'No categories available.'}
+                </Text>
+              }
+            />
+            
+            {formData.category && !categories.includes(formData.category) && (
+              <TouchableOpacity 
+                style={styles.addNewButton}
+                onPress={() => selectCategory(formData.category)}
+              >
+                <Ionicons name="add-circle" size={20} color="white" />
+                <Text style={styles.addNewButtonText}>Add "{formData.category}"</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Tag Selection Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={tagModalVisible}
+        onRequestClose={() => setTagModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add Tag</Text>
+              <TouchableOpacity onPress={() => setTagModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#000" />
+              </TouchableOpacity>
+            </View>
+            
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search or enter new tag"
+              value={newTag}
+              onChangeText={filterTags}
+            />
+            
+            <FlatList
+              data={filteredTags}
+              keyExtractor={(item, index) => index.toString()}
+              renderItem={({ item }) => (
+                <TouchableOpacity 
+                  style={styles.suggestionItem}
+                  onPress={() => selectTag(item)}
+                >
+                  <Text style={styles.suggestionText}>{item}</Text>
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>
+                  {newTag ? 'No matching tags. Press "Add" to create new tag.' : 'No tags available.'}
+                </Text>
+              }
+            />
+            
+            {newTag && !allTags.includes(newTag) && (
+              <TouchableOpacity 
+                style={styles.addNewButton}
+                onPress={handleAddTag}
+              >
+                <Ionicons name="add-circle" size={20} color="white" />
+                <Text style={styles.addNewButtonText}>Add "{newTag}"</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -343,16 +497,26 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 16,
-    fontWeight: '500',
     marginBottom: 8,
+    fontWeight: '500',
   },
   input: {
     borderWidth: 1,
     borderColor: '#ddd',
     borderRadius: 4,
-    padding: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     fontSize: 16,
     backgroundColor: 'white',
+  },
+  disabledInput: {
+    backgroundColor: '#f5f5f5',
+    color: '#666',
+  },
+  helperText: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
   },
   textarea: {
     height: 100,
@@ -375,13 +539,13 @@ const styles = StyleSheet.create({
   },
   priceCurrency: {
     paddingLeft: 12,
-    paddingRight: 4,
     fontSize: 16,
-    color: '#444',
+    color: '#333',
   },
   priceInput: {
     flex: 1,
-    padding: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
     fontSize: 16,
   },
   saveButton: {
@@ -389,7 +553,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#0a7ea4',
-    padding: 16,
+    paddingVertical: 12,
     borderRadius: 4,
     marginTop: 16,
   },
@@ -399,92 +563,149 @@ const styles = StyleSheet.create({
   saveButtonText: {
     color: 'white',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
     marginLeft: 8,
   },
   imageContainer: {
-    marginBottom: 16,
-  },
-  selectedImageContainer: {
-    position: 'relative',
-    width: '100%',
-    height: 200,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  selectedImage: {
-    width: '100%',
-    height: '100%',
-  },
-  removeImageButton: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    borderRadius: 15,
+    alignItems: 'center',
+    marginBottom: 10,
   },
   imagePlaceholder: {
-    width: '100%',
+    width: 200,
     height: 150,
+    borderRadius: 8,
+    backgroundColor: '#f0f0f0',
     borderWidth: 1,
     borderColor: '#ddd',
     borderStyle: 'dashed',
-    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f9f9f9',
   },
   imagePlaceholderText: {
-    marginTop: 8,
     color: '#757575',
+    marginTop: 8,
   },
-  tagInputContainer: {
+  selectedImageContainer: {
+    position: 'relative',
+  },
+  selectedImage: {
+    width: 200,
+    height: 150,
+    borderRadius: 8,
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: -10,
+    right: -10,
+    backgroundColor: 'white',
+    borderRadius: 15,
+    elevation: 2,
+  },
+  pickerDisplayContainer: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  placeholderText: {
+    color: '#999',
+  },
+  inputText: {
+    color: '#000',
+  },
+  tagsContainer: {
+    marginBottom: 10,
+  },
+  tagChipsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     marginBottom: 8,
   },
-  tagInput: {
+  tagChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#e0e0e0',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 16,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  tagChipText: {
+    marginRight: 4,
+    fontSize: 14,
+  },
+  addTagButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  addTagButtonText: {
+    color: '#0a7ea4',
+    marginLeft: 4,
+  },
+  modalOverlay: {
     flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  searchInput: {
     borderWidth: 1,
     borderColor: '#ddd',
     borderRadius: 4,
-    padding: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     fontSize: 16,
     backgroundColor: 'white',
-    marginRight: 8,
+    marginBottom: 16,
   },
-  addTagButton: {
-    backgroundColor: '#0a7ea4',
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 48,
-    borderRadius: 4,
+  suggestionItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
   },
-  disabledButton: {
-    backgroundColor: '#cccccc',
+  suggestionText: {
+    fontSize: 16,
   },
-  tagsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 8,
-    gap: 8,
-  },
-  tagBadge: {
-    backgroundColor: '#e0e0e0',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  tagText: {
-    fontSize: 14,
-    color: '#333',
-  },
-  helperText: {
-    fontSize: 14,
+  emptyText: {
+    padding: 16,
+    textAlign: 'center',
     color: '#757575',
     fontStyle: 'italic',
-    marginTop: 8,
+  },
+  addNewButton: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#4caf50',
+    paddingVertical: 12,
+    borderRadius: 4,
+    marginTop: 16,
+  },
+  addNewButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
   },
 });

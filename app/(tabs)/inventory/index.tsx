@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, FlatList, TouchableOpacity, TextInput, Image } from 'react-native';
-import { Link } from 'expo-router';
+import { Link, Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { itemsApi, Item } from '../../../src/services/api';
 import LoadingIndicator from '../../../src/components/ui/LoadingIndicator';
@@ -13,6 +13,8 @@ export default function InventoryList() {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const { filter, value } = useLocalSearchParams<{ filter?: string, value?: string }>();
 
   useEffect(() => {
     const fetchItems = async () => {
@@ -32,7 +34,21 @@ export default function InventoryList() {
   }, []);
 
   useEffect(() => {
-    if (searchQuery) {
+    if (filter && value) {
+      // Apply the filter from URL parameters
+      const filtered = items.filter(item => {
+        const itemValue = item[filter as keyof Item];
+        if (typeof itemValue === 'string') {
+          return itemValue.toLowerCase().includes(value.toLowerCase());
+        } else if (typeof itemValue === 'number') {
+          return itemValue.toString().includes(value);
+        } else if (Array.isArray(itemValue)) {
+          return itemValue.some(v => v.toLowerCase().includes(value.toLowerCase()));
+        }
+        return false;
+      });
+      setFilteredItems(filtered);
+    } else if (searchQuery) {
       const lowerCaseQuery = searchQuery.toLowerCase();
       const filtered = items.filter(item => 
         item.name.toLowerCase().includes(lowerCaseQuery) || 
@@ -44,7 +60,7 @@ export default function InventoryList() {
     } else {
       setFilteredItems(items);
     }
-  }, [searchQuery, items]);
+  }, [filter, value, searchQuery, items]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -52,6 +68,24 @@ export default function InventoryList() {
       currency: 'USD'
     }).format(amount);
   };
+
+  const renderFilterHeader = (title: string, field: string) => (
+    <View style={styles.filterHeader}>
+      <Text style={styles.filterTitle}>{title}</Text>
+      <TouchableOpacity 
+        onPress={() => router.push({
+          pathname: '/inventory/filter',
+          params: { field, value: value || '' }
+        })}
+      >
+        <Ionicons 
+          name="filter" 
+          size={18} 
+          color={filter === field ? "#0a7ea4" : "#757575"} 
+        />
+      </TouchableOpacity>
+    </View>
+  );
 
   if (loading) {
     return <LoadingIndicator />;
@@ -79,6 +113,17 @@ export default function InventoryList() {
           clearButtonMode="while-editing"
         />
       </View>
+
+      {filter && value && (
+        <View style={styles.activeFilter}>
+          <Text style={styles.activeFilterText}>
+            Filtered by: {filter} = {value}
+          </Text>
+          <TouchableOpacity onPress={() => router.push('/inventory')}>
+            <Ionicons name="close-circle" size={20} color="#0a7ea4" />
+          </TouchableOpacity>
+        </View>
+      )}
 
       {error && <ErrorMessage message={error} />}
 
@@ -150,6 +195,58 @@ export default function InventoryList() {
           )}
         />
       )}
+    </View>
+  );
+}
+
+export function FilterInventory() {
+  const { field, value } = useLocalSearchParams<{ field: string, value: string }>();
+  const [filterValue, setFilterValue] = useState(value || '');
+  const router = useRouter();
+  
+  const applyFilter = () => {
+    // Return to inventory with filter applied
+    router.push({
+      pathname: '/inventory',
+      params: { 
+        filter: field,
+        value: filterValue
+      }
+    });
+  };
+  
+  const clearFilter = () => {
+    router.push('/inventory');
+  };
+  
+  return (
+    <View style={styles.container}>
+      <Stack.Screen options={{ 
+        title: `Filter by ${field}`,
+        headerRight: () => (
+          <TouchableOpacity onPress={clearFilter} style={styles.clearButton}>
+            <Text style={styles.clearButtonText}>Clear</Text>
+          </TouchableOpacity>
+        )
+      }} />
+      
+      <Card>
+        <Text style={styles.label}>{`Enter ${field} filter:`}</Text>
+        <TextInput
+          style={styles.input}
+          value={filterValue}
+          onChangeText={setFilterValue}
+          autoFocus
+          placeholder={`Filter by ${field}...`}
+        />
+        
+        <TouchableOpacity 
+          style={styles.applyButton}
+          onPress={applyFilter}
+        >
+          <Text style={styles.applyButtonText}>Apply Filter</Text>
+        </TouchableOpacity>
+      </Card>
     </View>
   );
 }
@@ -282,4 +379,59 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#333',
   },
+  label: {
+    fontSize: 16,
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 4,
+    padding: 12,
+    fontSize: 16,
+    backgroundColor: 'white',
+    marginBottom: 16,
+  },
+  applyButton: {
+    backgroundColor: '#0a7ea4',
+    padding: 12,
+    borderRadius: 4,
+    alignItems: 'center',
+  },
+  applyButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  clearButton: {
+    paddingHorizontal: 16,
+  },
+  clearButtonText: {
+    color: '#0a7ea4',
+    fontSize: 16,
+  },
+  filterHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  filterTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  activeFilter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#e0f7fa',
+    padding: 8,
+    borderRadius: 4,
+    marginBottom: 16,
+  },
+  activeFilterText: {
+    color: '#00796b',
+    fontSize: 14,
+  }
 });

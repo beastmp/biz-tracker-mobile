@@ -31,6 +31,13 @@ export default function InventoryLayout() {
           headerBackTitle: "Details"
         }} 
       />
+      <Stack.Screen 
+        name="filter" 
+        options={{ 
+          headerTitle: "Filter Inventory",
+          headerBackTitle: "Inventory"
+        }} 
+      />
     </Stack>
   );
 }

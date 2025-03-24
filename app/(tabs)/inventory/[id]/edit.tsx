@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, ScrollView, TextInput, TouchableOpacity, Alert, Image } from 'react-native';
+import { 
+  StyleSheet, Text, View, ScrollView, TextInput, TouchableOpacity, 
+  Alert, Image, Modal, FlatList 
+} from 'react-native';
 import { Link, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { itemsApi, Item } from '../../../../src/services/api';
@@ -24,13 +27,29 @@ export default function EditInventoryItem() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // New states for category and tag management
+  const [categories, setCategories] = useState<string[]>([]);
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [newTag, setNewTag] = useState('');
+  const [categoryModalVisible, setCategoryModalVisible] = useState(false);
+  const [tagModalVisible, setTagModalVisible] = useState(false);
+  const [filteredCategories, setFilteredCategories] = useState<string[]>([]);
+  const [filteredTags, setFilteredTags] = useState<string[]>([]);
 
+  // Load item data and category/tag suggestions
   useEffect(() => {
-    const fetchItem = async () => {
+    const fetchData = async () => {
       if (!id) return;
       
       try {
-        const data = await itemsApi.getById(id);
+        // Fetch item, categories, and tags in parallel
+        const [data, categoriesData, tagsData] = await Promise.all([
+          itemsApi.getById(id),
+          itemsApi.getCategories(),
+          itemsApi.getTags()
+        ]);
+        
         setFormData({
           name: data.name,
           sku: data.sku,
@@ -45,15 +64,21 @@ export default function EditInventoryItem() {
         if (data.imageUrl) {
           setImageUri(data.imageUrl);
         }
+        
+        // Set categories and tags for autocomplete
+        setCategories(categoriesData);
+        setAllTags(tagsData);
+        setFilteredCategories(categoriesData);
+        setFilteredTags(tagsData);
       } catch (err) {
-        console.error('Failed to fetch item:', err);
-        setError('Failed to load item details. The item may have been deleted.');
+        console.error('Failed to fetch data:', err);
+        setError('Failed to load item details. Please check your connection.');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchItem();
+    fetchData();
   }, [id]);
 
   const handleChange = (field: keyof typeof formData, value: string) => {
@@ -61,9 +86,63 @@ export default function EditInventoryItem() {
       // Convert to number
       const numValue = parseFloat(value) || 0;
       setFormData(prev => ({ ...prev, [field]: numValue }));
+    } else if (field === 'category') {
+      // Filter categories as user types
+      const filtered = categories.filter(cat => 
+        cat.toLowerCase().includes(value.toLowerCase())
+      );
+      setFilteredCategories(filtered);
+      setFormData(prev => ({ ...prev, [field]: value }));
     } else {
       setFormData(prev => ({ ...prev, [field]: value }));
     }
+  };
+
+  // Tag management functions
+  const handleAddTag = () => {
+    if (!newTag.trim()) return;
+    
+    // Only add if it's not already in the array
+    if (!formData.tags?.includes(newTag.trim())) {
+      setFormData(prev => ({
+        ...prev,
+        tags: [...(prev.tags || []), newTag.trim()]
+      }));
+    }
+    
+    setNewTag('');
+    setTagModalVisible(false);
+  };
+
+  const handleRemoveTag = (tagToRemove: string) => {
+    setFormData(prev => ({
+      ...prev,
+      tags: prev.tags?.filter(tag => tag !== tagToRemove) || []
+    }));
+  };
+
+  const filterTags = (text: string) => {
+    const filtered = allTags.filter(tag => 
+      tag.toLowerCase().includes(text.toLowerCase())
+    );
+    setFilteredTags(filtered);
+    setNewTag(text);
+  };
+
+  const selectCategory = (category: string) => {
+    setFormData(prev => ({ ...prev, category }));
+    setCategoryModalVisible(false);
+  };
+
+  const selectTag = (tag: string) => {
+    if (!formData.tags?.includes(tag)) {
+      setFormData(prev => ({
+        ...prev,
+        tags: [...(prev.tags || []), tag]
+      }));
+    }
+    setNewTag('');
+    setTagModalVisible(false);
   };
 
   const validateForm = (): string | null => {
@@ -212,13 +291,47 @@ export default function EditInventoryItem() {
 
         <View style={styles.formGroup}>
           <Text style={styles.label}>Category *</Text>
-          <TextInput
+          <TouchableOpacity 
             style={styles.input}
-            value={formData.category}
-            onChangeText={(value) => handleChange('category', value)}
-            placeholder="Item category"
-            editable={!saving}
-          />
+            onPress={() => setCategoryModalVisible(true)}
+            disabled={saving}
+          >
+            <View style={styles.pickerDisplayContainer}>
+              <Text style={formData.category ? styles.inputText : styles.placeholderText}>
+                {formData.category || "Select a category"}
+              </Text>
+              <Ionicons name="chevron-down" size={20} color="#757575" />
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* Tags Section */}
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Tags</Text>
+          <View style={styles.tagsContainer}>
+            {formData.tags && formData.tags.length > 0 ? (
+              <View style={styles.tagChipsContainer}>
+                {formData.tags.map((tag, index) => (
+                  <View key={index} style={styles.tagChip}>
+                    <Text style={styles.tagChipText}>{tag}</Text>
+                    <TouchableOpacity onPress={() => handleRemoveTag(tag)}>
+                      <Ionicons name="close-circle" size={16} color="#666" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.placeholderText}>No tags added</Text>
+            )}
+            <TouchableOpacity 
+              style={styles.addTagButton} 
+              onPress={() => setTagModalVisible(true)}
+              disabled={saving}
+            >
+              <Ionicons name="add" size={20} color="#0a7ea4" />
+              <Text style={styles.addTagButtonText}>Add Tag</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.row}>
@@ -274,6 +387,114 @@ export default function EditInventoryItem() {
           </Text>
         </TouchableOpacity>
       </Card>
+      
+      {/* Category Selection Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={categoryModalVisible}
+        onRequestClose={() => setCategoryModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Category</Text>
+              <TouchableOpacity onPress={() => setCategoryModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#000" />
+              </TouchableOpacity>
+            </View>
+            
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search or enter new category"
+              value={formData.category}
+              onChangeText={(value) => handleChange('category', value)}
+            />
+            
+            <FlatList
+              data={filteredCategories}
+              keyExtractor={(item, index) => index.toString()}
+              renderItem={({ item }) => (
+                <TouchableOpacity 
+                  style={styles.suggestionItem}
+                  onPress={() => selectCategory(item)}
+                >
+                  <Text style={styles.suggestionText}>{item}</Text>
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>
+                  {formData.category ? 'No matching categories. Press "Add" to create new category.' : 'No categories available.'}
+                </Text>
+              }
+            />
+            
+            {formData.category && !categories.includes(formData.category) && (
+              <TouchableOpacity 
+                style={styles.addNewButton}
+                onPress={() => selectCategory(formData.category)}
+              >
+                <Ionicons name="add-circle" size={20} color="white" />
+                <Text style={styles.addNewButtonText}>Add "{formData.category}"</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Tag Selection Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={tagModalVisible}
+        onRequestClose={() => setTagModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add Tag</Text>
+              <TouchableOpacity onPress={() => setTagModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#000" />
+              </TouchableOpacity>
+            </View>
+            
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search or enter new tag"
+              value={newTag}
+              onChangeText={filterTags}
+            />
+            
+            <FlatList
+              data={filteredTags}
+              keyExtractor={(item, index) => index.toString()}
+              renderItem={({ item }) => (
+                <TouchableOpacity 
+                  style={styles.suggestionItem}
+                  onPress={() => selectTag(item)}
+                >
+                  <Text style={styles.suggestionText}>{item}</Text>
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>
+                  {newTag ? 'No matching tags. Press "Add" to create new tag.' : 'No tags available.'}
+                </Text>
+              }
+            />
+            
+            {newTag && !allTags.includes(newTag) && (
+              <TouchableOpacity 
+                style={styles.addNewButton}
+                onPress={handleAddTag}
+              >
+                <Ionicons name="add-circle" size={20} color="white" />
+                <Text style={styles.addNewButtonText}>Add "{newTag}"</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -426,4 +647,117 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.8)',
     borderRadius: 15,
   },
+  // New styles
+  pickerDisplayContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  inputText: {
+    fontSize: 16,
+    color: '#000',
+  },
+  placeholderText: {
+    fontSize: 16,
+    color: '#aaa',
+  },
+  tagsContainer: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 4,
+    padding: 12,
+    backgroundColor: 'white',
+  },
+  tagChipsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 8,
+  },
+  tagChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#e1f5fe',
+    borderRadius: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  tagChipText: {
+    fontSize: 14,
+    marginRight: 4,
+  },
+  addTagButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  addTagButtonText: {
+    color: '#0a7ea4',
+    fontSize: 14,
+    marginLeft: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    maxHeight: '75%',
+    padding: 16,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  searchInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 4,
+    padding: 12,
+    fontSize: 16,
+    backgroundColor: 'white',
+    marginBottom: 16,
+  },
+  suggestionItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  suggestionText: {
+    fontSize: 16,
+  },
+  emptyText: {
+    textAlign: 'center',
+    padding: 16,
+    color: '#757575',
+    fontStyle: 'italic',
+  },
+  addNewButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0a7ea4',
+    padding: 12,
+    borderRadius: 4,
+    marginTop: 8,
+  },
+  addNewButtonText: {
+    color: 'white',
+    fontSize: 16,
+    marginLeft: 8,
+  }
 });

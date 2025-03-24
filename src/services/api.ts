@@ -147,6 +147,33 @@ export const itemsApi = {
   delete: async (id: string): Promise<void> => {
     await api.delete(`/api/items/${id}`);
   },
+  getNextSku: async (): Promise<string> => {
+    try {
+      const response = await axios.get(`/api/items/nextsku`);
+      return response.data.nextSku;
+    } catch (error) {
+      console.error('Error fetching next SKU:', error);
+      throw error;
+    }
+  },
+  getCategories: async (): Promise<string[]> => {
+    try {
+      const response = await axios.get(`/api/items/categories`);
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+      throw error;
+    }
+  },
+  getTags: async (): Promise<string[]> => {
+    try {
+      const response = await axios.get(`/api/items/tags`);
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching tags:', error);
+      throw error;
+    }
+  }
 };
 
 // Sales API methods
