@@ -12,7 +12,7 @@ export default function Dashboard() {
     totalValue: 0,
     lowStockItems: [] as Item[],
   });
-  
+
   const [salesStats, setSalesStats] = useState({
     totalSales: 0,
     totalRevenue: 0,
@@ -24,7 +24,7 @@ export default function Dashboard() {
     totalCost: 0,
     recentPurchases: [] as Purchase[],
   });
-  
+
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -32,11 +32,11 @@ export default function Dashboard() {
       try {
         // Fetch inventory data
         const items = await itemsApi.getAll();
-        
+
         const totalItems = items.length;
         const totalValue = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
         const lowStockItems = items.filter(item => item.quantity < 5).sort((a, b) => a.quantity - b.quantity);
-        
+
         setInventoryStats({
           totalItems,
           totalValue,
@@ -47,25 +47,47 @@ export default function Dashboard() {
         const today = new Date();
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(today.getDate() - 30);
-        
+
         const startDate = thirtyDaysAgo.toISOString().split('T')[0];
         const endDate = today.toISOString().split('T')[0];
-        
-        // Fetch sales data - last 30 days
-        const salesReport = await salesApi.getReport(startDate, endDate);
-        setSalesStats({
-          totalSales: salesReport.totalSales,
-          totalRevenue: salesReport.totalRevenue,
-          recentSales: salesReport.sales.slice(0, 5),
-        });
 
-        // Fetch purchases data - last 30 days
-        const purchasesReport = await purchasesApi.getReport(startDate, endDate);
-        setPurchasesStats({
-          totalPurchases: purchasesReport.totalPurchases,
-          totalCost: purchasesReport.totalCost,
-          recentPurchases: purchasesReport.purchases.slice(0, 5),
-        });
+        // Fetch sales data with error handling
+        try {
+          const salesReport = await salesApi.getReport(startDate, endDate);
+          if (salesReport && typeof salesReport === 'object') {
+            setSalesStats({
+              totalSales: salesReport.totalSales || 0,
+              totalRevenue: salesReport.totalRevenue || 0,
+              recentSales: Array.isArray(salesReport.sales) ? salesReport.sales.slice(0, 5) : [],
+            });
+          }
+        } catch (err) {
+          console.error('Failed to fetch sales data:', err);
+          setSalesStats({
+            totalSales: 0,
+            totalRevenue: 0,
+            recentSales: [],
+          });
+        }
+
+        // Fetch purchases data with error handling
+        try {
+          const purchasesReport = await purchasesApi.getReport(startDate, endDate);
+          if (purchasesReport && typeof purchasesReport === 'object') {
+            setPurchasesStats({
+              totalPurchases: purchasesReport.totalPurchases || 0,
+              totalCost: purchasesReport.totalCost || 0,
+              recentPurchases: Array.isArray(purchasesReport.purchases) ? purchasesReport.purchases.slice(0, 5) : [],
+            });
+          }
+        } catch (err) {
+          console.error('Failed to fetch purchases data:', err);
+          setPurchasesStats({
+            totalPurchases: 0,
+            totalCost: 0,
+            recentPurchases: [],
+          });
+        }
       } catch (error) {
         console.error('Failed to fetch dashboard data:', error);
       } finally {
@@ -108,7 +130,7 @@ export default function Dashboard() {
   return (
     <ScrollView style={styles.container}>
       <Text style={styles.title}>Dashboard</Text>
-      
+
       <View style={styles.statsContainer}>
         <Card style={styles.statsCard}>
           <View style={styles.cardHeader}>
@@ -156,7 +178,7 @@ export default function Dashboard() {
             </TouchableOpacity>
           </Link>
         </Card>
-        
+
         <Card style={styles.statsCard}>
           <View style={styles.cardHeader}>
             <Text style={styles.cardText}>Purchases (30 days)</Text>
@@ -187,10 +209,8 @@ export default function Dashboard() {
       <Card>
         <Text style={styles.sectionTitle}>Low Stock Items</Text>
         <View style={styles.divider} />
-        
-        {inventoryStats.lowStockItems.length === 0 ? (
-          <Text style={styles.emptyText}>No items are low in stock.</Text>
-        ) : (
+
+        {Array.isArray(inventoryStats.lowStockItems) && inventoryStats.lowStockItems.length > 0 ? (
           inventoryStats.lowStockItems.slice(0, 5).map((item) => (
             <Link key={item._id} href={`/(tabs)/inventory/${item._id}`} asChild>
               <TouchableOpacity style={styles.listItem}>
@@ -205,6 +225,8 @@ export default function Dashboard() {
               </TouchableOpacity>
             </Link>
           ))
+        ) : (
+          <Text style={styles.emptyText}>No items are low in stock.</Text>
         )}
       </Card>
 
@@ -219,7 +241,7 @@ export default function Dashboard() {
           </Link>
         </View>
         <View style={styles.divider} />
-        
+
         {salesStats.recentSales.length === 0 ? (
           <Text style={styles.emptyText}>
             No recent sales found. Create your first sale to start tracking.
@@ -246,7 +268,7 @@ export default function Dashboard() {
           ))
         )}
       </Card>
-      
+
       <Card style={styles.lastCard}>
         <View style={styles.cardHeaderWithButton}>
           <Text style={styles.sectionTitle}>Recent Purchases</Text>
@@ -258,7 +280,7 @@ export default function Dashboard() {
           </Link>
         </View>
         <View style={styles.divider} />
-        
+
         {purchasesStats.recentPurchases.length === 0 ? (
           <Text style={styles.emptyText}>
             No recent purchases found. Create your first purchase to start tracking.
@@ -276,9 +298,9 @@ export default function Dashboard() {
                       <Text style={styles.itemSubtext}>
                         {purchase.purchaseDate && formatDate(purchase.purchaseDate)}
                       </Text>
-                      <View 
+                      <View
                         style={[
-                          styles.statusBadge, 
+                          styles.statusBadge,
                           { backgroundColor: getStatusColor(purchase.status) }
                         ]}
                       >
